@@ -96,6 +96,10 @@ python -m posturehound.cli scan docs/demo_collection.json --format html --out re
 
 ![PostureHound attack paths](docs/screenshots/attack_paths.png)
 
+**Attack Graph - interactive graph of escalation paths from any principal to Tier-0**
+
+![PostureHound attack graph](docs/screenshots/attack_graph.png)
+
 **What is in the demo tenant**
 
 | Identity | Misconfigurations |
