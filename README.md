@@ -4,6 +4,8 @@
 
 Read-only Azure / Entra identity attack-surface posture audit, driven by [AzureHound](https://github.com/SpecterOps/AzureHound) collection data.
 
+**[Documentation →](https://5t3v3.github.io/posturehound/)**
+
 ---
 
 ## Installation
