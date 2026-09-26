@@ -1,0 +1,174 @@
+<svg viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg" width="1200" height="400">
+<defs>
+  <linearGradient id="dogBg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#F09432"/>
+    <stop offset="100%" stop-color="#C05C08"/>
+  </linearGradient>
+  <radialGradient id="dogGl" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#f97316" stop-opacity="0.2"/>
+    <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="t0gl" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ef4444" stop-opacity="0.45"/>
+    <stop offset="45%"  stop-color="#ef4444" stop-opacity="0.1"/>
+    <stop offset="100%" stop-color="#ef4444" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="orgl" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#f97316" stop-opacity="0.28"/>
+    <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+  </radialGradient>
+  <marker id="arOr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+    <path d="M1,1 L6,3.5 L1,6 Z" fill="#f97316"/>
+  </marker>
+  <marker id="arRed" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+    <path d="M1,1 L6,3.5 L1,6 Z" fill="#ef4444"/>
+  </marker>
+  <pattern id="dotgrid" x="0" y="0" width="26" height="26" patternUnits="userSpaceOnUse">
+    <circle cx="13" cy="13" r="0.55" fill="#0f1620"/>
+  </pattern>
+</defs>
+
+<!-- Background -->
+<rect width="1200" height="400" fill="#080b12"/>
+<rect width="1200" height="356" fill="url(#dotgrid)"/>
+
+<!-- ── LEFT PANEL: mascot + name ── -->
+
+<!-- Dog glow -->
+<ellipse cx="73" cy="193" rx="62" ry="56" fill="url(#dogGl)"/>
+
+<!-- Dog icon 70x70 (scale=2.1875, origin 38,158) -->
+<rect x="38" y="158" width="70" height="70" rx="16" fill="url(#dogBg)"/>
+<ellipse cx="58"  cy="204" rx="9"   ry="22"  fill="#0b0d14"/>
+<ellipse cx="88"  cy="204" rx="9"   ry="22"  fill="#0b0d14"/>
+<circle  cx="73"  cy="186" r="21"   fill="#0b0d14"/>
+<circle  cx="64"  cy="184" r="5.3"  fill="#F09432"/>
+<circle  cx="82"  cy="184" r="5.3"  fill="#F09432"/>
+<circle  cx="64"  cy="184" r="2"    fill="#0b0d14"/>
+<circle  cx="82"  cy="184" r="2"    fill="#0b0d14"/>
+<circle  cx="66"  cy="181" r="1.5"  fill="#fdd090" opacity="0.7"/>
+<circle  cx="84"  cy="181" r="1.5"  fill="#fdd090" opacity="0.7"/>
+<ellipse cx="73"  cy="201" rx="6.5" ry="4.8" fill="#5a2a04"/>
+
+<!-- Name -->
+<text x="122" y="203"
+      fill="#e6edf3"
+      font-size="52"
+      font-weight="900"
+      font-family="'Segoe UI', system-ui, -apple-system, sans-serif"
+      letter-spacing="-1.5">POSTUREHOUND</text>
+
+<!-- Orange accent line -->
+<rect x="122" y="212" width="298" height="2.5" rx="1.2" fill="#f97316" opacity="0.6"/>
+
+<!-- Tagline -->
+<text x="122" y="238"
+      fill="#8b949e"
+      font-size="13.5"
+      font-family="'Segoe UI', system-ui, -apple-system, sans-serif">Azure identity attack-surface posture audit</text>
+
+<!-- ── RIGHT PANEL: attack path ──
+     Nodes:
+       N1  cx=530  cy=152  r=17  entry (grey-blue)
+       N2  cx=698  cy=262  r=25  mid   (orange)
+       N3  cx=868  cy=138  r=32  elev  (orange)
+       T0  cx=1065 cy=212  r=48  Tier-0 (red)
+
+     All node pairs >=130px edge-to-edge apart.
+-->
+
+<!-- T0 ambient glow (drawn first, behind all nodes) -->
+<circle cx="1065" cy="212" r="115" fill="url(#t0gl)"/>
+
+<!-- Critical path: glow layer (wide + dim) then bright layer -->
+
+<!-- N1 to N2 -->
+<path d="M556,163 C592,192 655,250 673,252"
+      fill="none" stroke="#f97316" stroke-width="10" opacity="0.13"/>
+<path d="M556,163 C592,192 655,250 673,252"
+      fill="none" stroke="#f97316" stroke-width="2.5"
+      marker-end="url(#arOr)"/>
+
+<!-- N2 to N3 -->
+<path d="M716,247 C750,218 822,162 836,152"
+      fill="none" stroke="#f97316" stroke-width="10" opacity="0.13"/>
+<path d="M716,247 C750,218 822,162 836,152"
+      fill="none" stroke="#f97316" stroke-width="2.8"
+      marker-end="url(#arOr)"/>
+
+<!-- N3 to T0 -->
+<path d="M900,148 C942,136 1004,194 1017,200"
+      fill="none" stroke="#ef4444" stroke-width="11" opacity="0.14"/>
+<path d="M900,148 C942,136 1004,194 1017,200"
+      fill="none" stroke="#ef4444" stroke-width="3.2"
+      marker-end="url(#arRed)"/>
+
+<!-- N1: entry node -->
+<circle cx="530" cy="152" r="26" fill="url(#orgl)" opacity="0.5"/>
+<circle cx="530" cy="152" r="17" fill="#0e141e" stroke="#4a6080" stroke-width="2"/>
+<circle cx="530" cy="147" r="4.5" fill="#4a6080"/>
+<path d="M523,159 Q530,154 537,159" stroke="#4a6080" stroke-width="1.3" fill="none"/>
+
+<!-- N2: mid node (key icon) -->
+<circle cx="698" cy="262" r="35" fill="url(#orgl)" opacity="0.45"/>
+<circle cx="698" cy="262" r="25" fill="#130a02" stroke="#f97316" stroke-width="2.2"/>
+<circle cx="694" cy="256" r="6"   fill="none" stroke="#f97316" stroke-width="1.5"/>
+<line x1="698" y1="262" x2="707" y2="272" stroke="#f97316" stroke-width="1.5"/>
+<line x1="704" y1="269" x2="709" y2="265" stroke="#f97316" stroke-width="1.4"/>
+<line x1="706" y1="272" x2="711" y2="268" stroke="#f97316" stroke-width="1.4"/>
+
+<!-- N3: elevated node (shield icon) -->
+<circle cx="868" cy="138" r="46" fill="url(#orgl)" opacity="0.38"/>
+<circle cx="868" cy="138" r="32" fill="#150903" stroke="#f97316" stroke-width="2.5"/>
+<path d="M855,127 L855,146 L868,154 L881,146 L881,127 L868,122 Z"
+      fill="none" stroke="#f97316" stroke-width="1.6" stroke-linejoin="round"/>
+
+<!-- T0: Tier-0 target (crosshair icon) -->
+<circle cx="1065" cy="212" r="65" fill="none" stroke="#ef4444" stroke-width="0.6"
+        stroke-dasharray="3,7" opacity="0.28"/>
+<circle cx="1065" cy="212" r="48" fill="#14080a" stroke="#ef4444" stroke-width="3"/>
+<circle cx="1065" cy="204" r="13"  fill="none" stroke="#ef4444" stroke-width="1.9"/>
+<circle cx="1065" cy="204" r="5"   fill="#ef4444" opacity="0.85"/>
+<line x1="1065" y1="187" x2="1065" y2="192" stroke="#ef4444" stroke-width="1.9"/>
+<line x1="1065" y1="216" x2="1065" y2="221" stroke="#ef4444" stroke-width="1.9"/>
+<line x1="1048" y1="204" x2="1053" y2="204" stroke="#ef4444" stroke-width="1.9"/>
+<line x1="1077" y1="204" x2="1082" y2="204" stroke="#ef4444" stroke-width="1.9"/>
+<text x="1065" y="226" text-anchor="middle" fill="#ef4444"
+      font-size="9" font-weight="bold"
+      font-family="monospace, 'Courier New'" letter-spacing="2">TIER-0</text>
+
+<!-- ── BOTTOM BAR: 3 steps ── -->
+<rect x="0" y="356" width="1200" height="44" fill="#060810"/>
+<line x1="0" y1="356" x2="1200" y2="356" stroke="#111827" stroke-width="1"/>
+
+<!-- Step 1 -->
+<circle cx="142" cy="378" r="10" fill="none" stroke="#f97316" stroke-width="1.8"/>
+<text x="142" y="383" text-anchor="middle" fill="#f97316"
+      font-size="10" font-weight="bold" font-family="monospace, 'Courier New'">1</text>
+<text x="162" y="374" fill="#c9d1d9" font-size="12" font-weight="600"
+      font-family="'Segoe UI', system-ui, sans-serif">COLLECT DATA</text>
+<text x="162" y="390" fill="#484f58" font-size="10"
+      font-family="'Segoe UI', system-ui, sans-serif">AzureHound export or live SP</text>
+
+<line x1="400" y1="362" x2="400" y2="398" stroke="#1c2432" stroke-width="1"/>
+
+<!-- Step 2 -->
+<circle cx="480" cy="378" r="10" fill="none" stroke="#f97316" stroke-width="1.8"/>
+<text x="480" y="383" text-anchor="middle" fill="#f97316"
+      font-size="10" font-weight="bold" font-family="monospace, 'Courier New'">2</text>
+<text x="500" y="374" fill="#c9d1d9" font-size="12" font-weight="600"
+      font-family="'Segoe UI', system-ui, sans-serif">UPLOAD SCAN</text>
+<text x="500" y="390" fill="#484f58" font-size="10"
+      font-family="'Segoe UI', system-ui, sans-serif">Web UI, CLI, or Docker</text>
+
+<line x1="730" y1="362" x2="730" y2="398" stroke="#1c2432" stroke-width="1"/>
+
+<!-- Step 3 -->
+<circle cx="810" cy="378" r="10" fill="none" stroke="#f97316" stroke-width="1.8"/>
+<text x="810" y="383" text-anchor="middle" fill="#f97316"
+      font-size="10" font-weight="bold" font-family="monospace, 'Courier New'">3</text>
+<text x="830" y="374" fill="#c9d1d9" font-size="12" font-weight="600"
+      font-family="'Segoe UI', system-ui, sans-serif">GET FINDINGS</text>
+<text x="830" y="390" fill="#484f58" font-size="10"
+      font-family="'Segoe UI', system-ui, sans-serif">Rules + AI analysis + attack graph</text>
+</svg>
