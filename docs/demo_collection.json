@@ -1,0 +1,325 @@
+{
+  "meta": {
+    "version": "2.0",
+    "type": "azure",
+    "collectionMethods": ["Group", "LocalGroups", "Sessions", "Trusts", "Default", "RDP", "DCOM", "SPNTargets", "PSRemote"],
+    "createdAt": "2025-09-26T08:00:00Z",
+    "tenantId": "contoso-demo-0000-0000-000000000000"
+  },
+  "data": [
+    {
+      "kind": "AZTenant",
+      "data": {
+        "id": "/tenants/contoso-demo-0000-0000-000000000000",
+        "tenantId": "contoso-demo-0000-0000-000000000000",
+        "displayName": "Contoso Demo"
+      }
+    },
+    {
+      "kind": "AZSubscription",
+      "data": {
+        "id": "/subscriptions/aaaa1111-0000-0000-0000-000000000001",
+        "subscriptionId": "aaaa1111-0000-0000-0000-000000000001",
+        "displayName": "Contoso-Prod",
+        "tenantId": "contoso-demo-0000-0000-000000000000"
+      }
+    },
+    {
+      "kind": "AZResourceGroup",
+      "data": {
+        "id": "/subscriptions/aaaa1111-0000-0000-0000-000000000001/resourceGroups/rg-prod-core",
+        "displayName": "rg-prod-core",
+        "subscriptionId": "aaaa1111-0000-0000-0000-000000000001"
+      }
+    },
+    {
+      "kind": "AZUser",
+      "data": {
+        "id": "user-alice-0001-0000-000000000001",
+        "displayName": "Alice Chen",
+        "userPrincipalName": "alice.chen@contoso.com",
+        "accountEnabled": true,
+        "userType": "Member"
+      }
+    },
+    {
+      "kind": "AZUser",
+      "data": {
+        "id": "user-bob-0002-0000-000000000002",
+        "displayName": "Bob Smith",
+        "userPrincipalName": "bob.smith@contoso.com",
+        "accountEnabled": true,
+        "userType": "Member"
+      }
+    },
+    {
+      "kind": "AZUser",
+      "data": {
+        "id": "user-guest-0003-0000-000000000003",
+        "displayName": "vendor@partner.onmicrosoft.com",
+        "userPrincipalName": "vendor_partner.onmicrosoft.com#EXT#@contoso.com",
+        "accountEnabled": true,
+        "userType": "Guest"
+      }
+    },
+    {
+      "kind": "AZUser",
+      "data": {
+        "id": "user-stale-0004-0000-000000000004",
+        "displayName": "Departed Employee",
+        "userPrincipalName": "ex-employee@contoso.com",
+        "accountEnabled": false,
+        "userType": "Member"
+      }
+    },
+    {
+      "kind": "AZGroup",
+      "data": {
+        "id": "group-admins-0001-0000-00000000001",
+        "displayName": "IT Admins",
+        "isAssignableToRole": false
+      }
+    },
+    {
+      "kind": "AZGroup",
+      "data": {
+        "id": "group-roleassignable-0002-000000000002",
+        "displayName": "PrivilegedAccessGroup",
+        "isAssignableToRole": true,
+        "membershipRule": null
+      }
+    },
+    {
+      "kind": "AZServicePrincipal",
+      "data": {
+        "id": "sp-automation-0001-0000-000000000001",
+        "displayName": "AutomationSP",
+        "servicePrincipalType": "Application",
+        "accountEnabled": true,
+        "appOwnerOrganizationId": "contoso-demo-0000-0000-000000000000",
+        "passwordCredentials": [
+          {"keyId": "cred-0001", "endDateTime": "2026-12-01T00:00:00Z"},
+          {"keyId": "cred-0002", "endDateTime": "2027-06-01T00:00:00Z"}
+        ],
+        "keyCredentials": []
+      }
+    },
+    {
+      "kind": "AZServicePrincipal",
+      "data": {
+        "id": "sp-graphapp-0002-0000-000000000002",
+        "displayName": "GraphApiApp",
+        "servicePrincipalType": "Application",
+        "accountEnabled": true,
+        "appOwnerOrganizationId": "contoso-demo-0000-0000-000000000000",
+        "passwordCredentials": [
+          {"keyId": "cred-0003", "endDateTime": "2027-01-01T00:00:00Z"}
+        ],
+        "keyCredentials": []
+      }
+    },
+    {
+      "kind": "AZServicePrincipal",
+      "data": {
+        "id": "sp-msgraph-0000-0000-000000000000",
+        "displayName": "Microsoft Graph",
+        "servicePrincipalType": "Application",
+        "accountEnabled": true,
+        "appOwnerOrganizationId": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+        "appRoles": [
+          {"id": "9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8", "value": "RoleManagement.ReadWrite.Directory"},
+          {"id": "06b708a9-e830-4db3-a914-8e69da51d44f", "value": "AppRoleAssignment.ReadWrite.All"},
+          {"id": "19dbc75e-c2e2-444c-a770-ec69d8559fc7", "value": "Directory.ReadWrite.All"}
+        ]
+      }
+    },
+    {
+      "kind": "AZRole",
+      "data": {
+        "id": "62e90394-69f5-4237-9190-012177145e10",
+        "displayName": "Global Administrator",
+        "templateId": "62e90394-69f5-4237-9190-012177145e10"
+      }
+    },
+    {
+      "kind": "AZRole",
+      "data": {
+        "id": "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3",
+        "displayName": "Application Administrator",
+        "templateId": "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3"
+      }
+    },
+    {
+      "kind": "AZRole",
+      "data": {
+        "id": "158c047a-c907-4556-b7ef-446551a6b5f7",
+        "displayName": "Cloud Application Administrator",
+        "templateId": "158c047a-c907-4556-b7ef-446551a6b5f7"
+      }
+    },
+    {
+      "kind": "AZKeyVault",
+      "data": {
+        "id": "/subscriptions/aaaa1111-0000-0000-0000-000000000001/resourceGroups/rg-prod-core/providers/Microsoft.KeyVault/vaults/kv-prod-secrets",
+        "displayName": "kv-prod-secrets",
+        "subscriptionId": "aaaa1111-0000-0000-0000-000000000001"
+      }
+    },
+    {
+      "kind": "AZStorageAccount",
+      "data": {
+        "id": "/subscriptions/aaaa1111-0000-0000-0000-000000000001/resourceGroups/rg-prod-core/providers/Microsoft.Storage/storageAccounts/stprodlogs",
+        "displayName": "stprodlogs",
+        "subscriptionId": "aaaa1111-0000-0000-0000-000000000001",
+        "allowBlobPublicAccess": true,
+        "supportsHttpsTrafficOnly": false
+      }
+    },
+    {
+      "kind": "AZGroupMember",
+      "data": {
+        "groupId": "group-admins-0001-0000-00000000001",
+        "members": [
+          {"member": {"@odata.type": "#microsoft.graph.user", "id": "user-alice-0001-0000-000000000001"}},
+          {"member": {"@odata.type": "#microsoft.graph.user", "id": "user-bob-0002-0000-000000000002"}},
+          {"member": {"@odata.type": "#microsoft.graph.user", "id": "user-guest-0003-0000-000000000003"}}
+        ]
+      }
+    },
+    {
+      "kind": "AZGroupMember",
+      "data": {
+        "groupId": "group-roleassignable-0002-000000000002",
+        "members": [
+          {"member": {"@odata.type": "#microsoft.graph.user", "id": "user-alice-0001-0000-000000000001"}},
+          {"member": {"@odata.type": "#microsoft.graph.user", "id": "user-stale-0004-0000-000000000004"}}
+        ]
+      }
+    },
+    {
+      "kind": "AZRoleAssignment",
+      "data": {
+        "roleAssignments": [
+          {
+            "principalId": "user-alice-0001-0000-000000000001",
+            "roleDefinitionId": "62e90394-69f5-4237-9190-012177145e10"
+          },
+          {
+            "principalId": "user-bob-0002-0000-000000000002",
+            "roleDefinitionId": "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3"
+          },
+          {
+            "principalId": "user-guest-0003-0000-000000000003",
+            "roleDefinitionId": "158c047a-c907-4556-b7ef-446551a6b5f7"
+          },
+          {
+            "principalId": "sp-automation-0001-0000-000000000001",
+            "roleDefinitionId": "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "AZAppRoleAssignment",
+      "data": {
+        "appRoleAssignments": [
+          {
+            "principalId": "sp-graphapp-0002-0000-000000000002",
+            "resourceId": "sp-msgraph-0000-0000-000000000000",
+            "appRoleId": "9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8",
+            "appRoleValue": "RoleManagement.ReadWrite.Directory"
+          },
+          {
+            "principalId": "sp-graphapp-0002-0000-000000000002",
+            "resourceId": "sp-msgraph-0000-0000-000000000000",
+            "appRoleId": "19dbc75e-c2e2-444c-a770-ec69d8559fc7",
+            "appRoleValue": "Directory.ReadWrite.All"
+          },
+          {
+            "principalId": "sp-automation-0001-0000-000000000001",
+            "resourceId": "sp-msgraph-0000-0000-000000000000",
+            "appRoleId": "06b708a9-e830-4db3-a914-8e69da51d44f",
+            "appRoleValue": "AppRoleAssignment.ReadWrite.All"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "AZKeyVaultAccessPolicy",
+      "data": {
+        "keyVaultId": "/subscriptions/aaaa1111-0000-0000-0000-000000000001/resourceGroups/rg-prod-core/providers/Microsoft.KeyVault/vaults/kv-prod-secrets",
+        "accessPolicies": [
+          {
+            "objectId": "user-alice-0001-0000-000000000001",
+            "permissions": {"secrets": ["get", "list", "set", "delete", "purge"], "keys": ["get", "create", "delete"], "certificates": ["get", "list"]}
+          },
+          {
+            "objectId": "user-guest-0003-0000-000000000003",
+            "permissions": {"secrets": ["get", "list"], "keys": ["get"], "certificates": ["get"]}
+          },
+          {
+            "objectId": "sp-automation-0001-0000-000000000001",
+            "permissions": {"secrets": ["get", "list", "set", "delete"], "keys": ["get", "list", "create", "delete", "sign", "verify"], "certificates": ["get", "list"]}
+          }
+        ]
+      }
+    },
+    {
+      "kind": "AZSubscriptionOwner",
+      "data": {
+        "source": "user-alice-0001-0000-000000000001",
+        "target": "/subscriptions/aaaa1111-0000-0000-0000-000000000001"
+      }
+    },
+    {
+      "kind": "AZSubscriptionOwner",
+      "data": {
+        "source": "sp-automation-0001-0000-000000000001",
+        "target": "/subscriptions/aaaa1111-0000-0000-0000-000000000001"
+      }
+    },
+    {
+      "kind": "AZSubscriptionContributor",
+      "data": {
+        "source": "user-bob-0002-0000-000000000002",
+        "target": "/subscriptions/aaaa1111-0000-0000-0000-000000000001"
+      }
+    },
+    {
+      "kind": "AZRoleEligibilityScheduleInstance",
+      "data": {
+        "principalId": "user-bob-0002-0000-000000000002",
+        "roleDefinitionId": "62e90394-69f5-4237-9190-012177145e10",
+        "directoryScopeId": "/"
+      }
+    },
+    {
+      "kind": "AZRoleManagementPolicy",
+      "data": {
+        "roleDefinitionId": "62e90394-69f5-4237-9190-012177145e10",
+        "activationRequiresMfa": false,
+        "activationRequiresApproval": false,
+        "activationMaxDuration": "PT24H",
+        "permanentEligibilityAllowed": true
+      }
+    },
+    {
+      "kind": "AZServicePrincipalOwner",
+      "data": {
+        "servicePrincipalId": "sp-graphapp-0002-0000-000000000002",
+        "owners": [
+          {"owner": {"@odata.type": "#microsoft.graph.user", "id": "user-bob-0002-0000-000000000002"}}
+        ]
+      }
+    },
+    {
+      "kind": "AZContains",
+      "data": {
+        "subscriptionId": "/subscriptions/aaaa1111-0000-0000-0000-000000000001",
+        "children": [
+          {"childId": "/subscriptions/aaaa1111-0000-0000-0000-000000000001/resourceGroups/rg-prod-core"}
+        ]
+      }
+    }
+  ]
+}

@@ -76,6 +76,86 @@ Default credentials: `admin` / `posturehound` - you are prompted to change the p
 
 ---
 
+## Example output
+
+The collection below represents a fictitious Azure tenant ("Contoso Demo") with several deliberate misconfigurations. Run it locally to see what PostureHound surfaces:
+
+```bash
+python -m posturehound.cli scan docs/demo_collection.json --format html --out report.html
+```
+
+**What is in the demo tenant**
+
+| Identity | Misconfigurations |
+|----------|-------------------|
+| Alice Chen (User) | Global Administrator + Subscription Owner - no PIM |
+| Bob Smith (User) | PIM-eligible Global Administrator with no MFA required on activation |
+| vendor@partner.onmicrosoft.com (Guest) | Cloud Application Administrator role - external account |
+| AutomationSP (Service Principal) | AppRoleAssignment.ReadWrite.All + Subscription Owner + Key Vault write access |
+| GraphApiApp (Service Principal) | RoleManagement.ReadWrite.Directory + Directory.ReadWrite.All, owned by Bob |
+| kv-prod-secrets (Key Vault) | No network restrictions, guest and SP with broad access |
+| stprodlogs (Storage Account) | Public blob access enabled, HTTP allowed |
+
+**Score: F (21/100) - 4 Critical, 10 High, 4 Medium, 3 Low**
+
+```
+Severity breakdown
+  Critical  4   Service principal self-escalation, guest with privileged role,
+                attack path to Tier-0, UAA self-escalation
+  High     10   Dangerous Graph permissions, standing SP credentials, weak PIM
+                policy, broad RBAC, Storage key exposure
+  Medium    4   Orphaned role-assignable group, Key Vault open to internet,
+                public blob access, HTTP traffic allowed
+  Low       3   Secret-based auth, direct role assignments, insufficient GA count
+```
+
+**Attack paths found: 7 paths, 4 reaching Tier-0**
+
+```
+Entry point                   Objective               Tier-0  Hops  Route
+GraphApiApp (SP)          ->  Global Administrator     yes      1   CanGrantRole
+AutomationSP (SP)         ->  Global Administrator     yes      2   CanAddSecret -> CanGrantRole
+Bob Smith (User)          ->  Global Administrator     yes      1   EligibleForRole
+vendor@partner (Guest)    ->  Global Administrator     yes      2   CanAddSecret -> CanGrantRole
+```
+
+**Choke points - highest-leverage remediation targets**
+
+| Principal | Paths through | Action |
+|-----------|--------------|--------|
+| GraphApiApp | 5 paths (100%) | Remove RoleManagement.ReadWrite.Directory |
+| AutomationSP | 3 paths (43%) | Remove AppRoleAssignment.ReadWrite.All, rotate credentials |
+| Global Administrator role | 2 paths (29%) | Enforce MFA + approval on PIM activation |
+
+**CLI output (Critical findings only)**
+
+```
+$ python -m posturehound.cli scan docs/demo_collection.json --min-severity Critical
+
+AZ-APP-001  Critical  Service principal can grant itself any Entra role
+            Entities: AutomationSP, GraphApiApp
+            RoleManagement.ReadWrite.Directory lets the SP assign Global Administrator
+            to itself in a single Graph API call.
+
+AZ-IDENT-004  Critical  Guest user holds a privileged Entra role
+              Entities: vendor@partner.onmicrosoft.com
+              Guest identities are governed by the home tenant's controls.
+              Compromise at the partner propagates directly into your tenant.
+
+AZ-PATH-001  Critical  Non-privileged principal can escalate to a Tier-0 role
+             Entities: GraphApiApp
+             GraphApiApp -> Global Administrator (1 hop, CanGrantRole)
+
+AZ-RBAC-002  Critical  User Access Administrator at broad scope (self-escalation)
+             Entities: AutomationSP, Alice Chen
+             Holder can assign itself Owner over the subscription then access
+             all resources and managed identities.
+
+exit code: 2  (Critical findings present - CI gate triggered)
+```
+
+---
+
 ## How to run a scan
 
 1. **Collect** an AzureHound JSON export from your Azure tenant:
