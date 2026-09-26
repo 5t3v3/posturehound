@@ -84,6 +84,18 @@ The collection below represents a fictitious Azure tenant ("Contoso Demo") with 
 python -m posturehound.cli scan docs/demo_collection.json --format html --out report.html
 ```
 
+**Overview - posture summary and highest-impact exposure**
+
+![PostureHound overview](docs/screenshots/overview.png)
+
+**Findings - full finding list with severity, category and affected entities**
+
+![PostureHound findings](docs/screenshots/findings.png)
+
+**Attack Paths - maximum-impact escalation routes to Tier-0**
+
+![PostureHound attack paths](docs/screenshots/attack_paths.png)
+
 **What is in the demo tenant**
 
 | Identity | Misconfigurations |
