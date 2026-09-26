@@ -1760,10 +1760,7 @@ async function viewGraph(scanId,focusId,targetId){
   if(typeof cytoscape==='undefined'){$('#gmsg').textContent='Graph library failed to load.';return;}
   CY=cytoscape({container:$('#cy'),style:_cyStyle(),wheelSensitivity:0.25,
     pixelRatio:1,textureOnViewport:true,hideEdgesOnViewport:true,motionBlur:false,
-    // Nodes are laid out by the force layout and never hand-positioned, so make them
-    // non-grabbable: a click that moves a pixel then becomes a clean 'tap' (which refreshes
-    // the detail panel) instead of a silent node-drag that fired nothing.
-    autoungrabify:true});
+    autoungrabify:false});
   _wireHover();
   // Forgiving selection: a dense/zoomed-out graph packs nodes closer than a fingertip, so
   // instead of requiring a pixel-perfect hit we select the node whose CENTRE is nearest the
