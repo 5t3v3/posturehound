@@ -1,0 +1,38 @@
+# Secrets - never commit. .env holds ANTHROPIC_API_KEY.
+.env
+.env.*
+!.env.example
+
+# Virtualenv / build
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local tool state (scan history, settings, cached graph databases)
+.posturehound/
+
+# PowerPoint lock/backup cruft
+~$*.pptx
+*.pptx.bak*
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Local machine-specific preview config (absolute paths)
+.claude/launch.json
+
+# Generated report artifacts / scratch (contain live tenant data - never commit)
+/attack-path-idp.md
+/pod-impact-report.html
+*-report.html
+*-impact-report.*

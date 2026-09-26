@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PostureHound User Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f7f6f3; --panel:#ffffff; --panel-2:#f1efe9; --ink:#1b2029; --ink-2:#4a5160;
+  --muted:#727a89; --line:#e4e0d7; --line-2:#eceae3;
+  --accent:#c05c08; --accent-2:#f09432; --accent-soft:#fbe9d3;
+  --code-bg:#0e1420; --code-ink:#e7ecf3; --code-line:#243044;
+  --crit:#d1373c; --high:#c9701f; --med:#a7841b; --low:#4f74bd; --ok:#2f9e63;
+  --ring:rgba(192,92,8,.35);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d1017; --panel:#141a24; --panel-2:#1a212e; --ink:#e7ebf2; --ink-2:#aeb6c4;
+  --muted:#7f8896; --line:#232c3a; --line-2:#1c242f;
+  --accent:#f5a24a; --accent-2:#f09432; --accent-soft:#2a2013;
+  --code-bg:#0a0e16; --code-ink:#e2e8f2; --code-line:#1e2735;
+  --crit:#f0575c; --high:#f0913e; --med:#e3bb46; --low:#7ba0e6; --ok:#4cc182;
+  --ring:rgba(240,146,50,.4);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0d1017; --panel:#141a24; --panel-2:#1a212e; --ink:#e7ebf2; --ink-2:#aeb6c4;
+  --muted:#7f8896; --line:#232c3a; --line-2:#1c242f;
+  --accent:#f5a24a; --accent-2:#f09432; --accent-soft:#2a2013;
+  --code-bg:#0a0e16; --code-ink:#e2e8f2; --code-line:#1e2735;
+  --crit:#f0575c; --high:#f0913e; --med:#e3bb46; --low:#7ba0e6; --ok:#4cc182;
+  --ring:rgba(240,146,50,.4);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15.5px; line-height:1.65; -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{font-family:"Sora","Segoe UI",system-ui,sans-serif;text-wrap:balance;line-height:1.2;letter-spacing:-.01em}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd,pre{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* ---- shell ---- */
+.wrap{display:grid;grid-template-columns:270px minmax(0,1fr);gap:0;max-width:1180px;margin:0 auto}
+.side{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:26px 20px 40px;border-right:1px solid var(--line)}
+.main{min-width:0;padding:0 clamp(18px,4vw,56px) 96px}
+@media (max-width:860px){
+  .wrap{grid-template-columns:1fr}
+  .side{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}
+  .toc{columns:2;column-gap:22px}
+}
+
+/* ---- sidebar ---- */
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:22px}
+.brand svg{border-radius:9px;flex:none;box-shadow:0 3px 12px -4px var(--ring)}
+.brand .bn{font-family:"Sora";font-weight:700;font-size:16px;letter-spacing:-.02em}
+.brand .bs{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.14em}
+.toc a{display:block;color:var(--ink-2);font-size:13.5px;padding:5px 10px;border-radius:7px;border-left:2px solid transparent}
+.toc a:hover{background:var(--panel-2);text-decoration:none;color:var(--ink)}
+.toc a.on{color:var(--accent);border-left-color:var(--accent);background:var(--accent-soft)}
+.toc .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin:18px 0 6px 10px;font-weight:600}
+.themebtn{margin:20px 0 0 10px;font:inherit;font-size:12.5px;color:var(--ink-2);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 13px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.themebtn:hover{border-color:var(--accent)}
+
+/* ---- hero ---- */
+.hero{padding:52px 0 30px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.16em;color:var(--accent);font-weight:600}
+.hero h1{font-size:clamp(32px,5vw,46px);margin:.35em 0 .28em;font-weight:700}
+.hero p.lede{font-size:clamp(16px,2.4vw,19px);color:var(--ink-2);max-width:60ch;margin:0}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.badge{font-size:12px;font-weight:500;padding:4px 11px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--ink-2);display:inline-flex;gap:6px;align-items:center}
+.badge b{color:var(--ink);font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+
+/* ---- sections ---- */
+section{padding-top:44px;scroll-margin-top:14px}
+section>h2{font-size:26px;margin:0 0 4px;display:flex;align-items:baseline;gap:12px}
+section>h2 .num{font-size:14px;color:var(--accent);font-family:"IBM Plex Mono";font-weight:500}
+.sub{color:var(--muted);margin:.1em 0 1.4em;font-size:14.5px}
+h3{font-size:17.5px;margin:1.8em 0 .5em}
+p{margin:.7em 0}
+ul,ol{padding-left:1.3em;margin:.6em 0}
+li{margin:.32em 0}
+li::marker{color:var(--muted)}
+strong{color:var(--ink);font-weight:600}
+
+/* ---- steps ---- */
+.steps{list-style:none;padding:0;margin:1.2em 0;counter-reset:s}
+.steps>li{counter-increment:s;position:relative;padding:0 0 4px 46px;margin:0 0 20px}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:-2px;width:30px;height:30px;border-radius:9px;
+  background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;font-family:"Sora";font-weight:700;font-size:14px;
+  display:grid;place-items:center;box-shadow:0 4px 12px -4px var(--ring)}
+.steps>li>h4{margin:.1em 0 .3em;font-size:16px}
+
+/* ---- code blocks ---- */
+.code{position:relative;margin:.9em 0;background:var(--code-bg);border:1px solid var(--code-line);border-radius:11px;overflow:hidden}
+.code pre{margin:0;padding:15px 16px;overflow-x:auto;color:var(--code-ink);font-size:13.4px;line-height:1.7}
+.code .cmt{color:#7f93ab}
+.code .cp{color:#f0a95c}
+.copy{position:absolute;top:8px;right:8px;font:inherit;font-size:11.5px;font-family:"IBM Plex Mono";
+  background:rgba(255,255,255,.06);color:#c8d3e2;border:1px solid var(--code-line);border-radius:7px;padding:4px 9px;cursor:pointer}
+.copy:hover{background:rgba(240,146,50,.18);color:#fff;border-color:var(--accent)}
+.copy.done{color:var(--ok);border-color:var(--ok)}
+p code,li code,td code{background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:.08em .4em;font-size:.86em;color:var(--accent)}
+
+/* ---- callouts ---- */
+.note{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--panel);border-radius:10px;padding:14px 16px;margin:1.2em 0;font-size:14.3px}
+.note.warn{border-left-color:var(--crit)}
+.note.ok{border-left-color:var(--ok)}
+.note .nt{font-weight:600;font-family:"Sora";font-size:13px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;color:var(--ink)}
+.note.warn .nt{color:var(--crit)}
+.note.ok .nt{color:var(--ok)}
+
+/* ---- cards ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:1.1em 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 17px}
+.card h4{margin:0 0 5px;font-size:15px}
+.card p{margin:0;font-size:13.6px;color:var(--ink-2)}
+
+/* ---- table ---- */
+.tbl{width:100%;border-collapse:collapse;margin:1em 0;font-size:13.7px;display:block;overflow-x:auto}
+.tbl table{width:100%;border-collapse:collapse;min-width:520px}
+.tbl th,.tbl td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-family:"Sora";font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td code{white-space:nowrap}
+
+/* ---- severity legend ---- */
+.sev{display:flex;flex-wrap:wrap;gap:10px;margin:1em 0}
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
+.chip i{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+hr.rule{border:none;border-top:1px solid var(--line);margin:0}
+footer{padding:34px 0 0;color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:56px}
+footer a{color:var(--ink-2)}
+.kbd{font-family:"IBM Plex Mono";font-size:.82em;background:var(--panel-2);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:.05em .45em}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ============ SIDEBAR ============ -->
+<aside class="side">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="34" height="34" aria-hidden="true"><defs><linearGradient id="phbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#F09432"/><stop offset="100%" stop-color="#C05C08"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#phbg)"/><ellipse cx="9" cy="21" rx="4" ry="10" fill="#0b0d14"/><ellipse cx="23" cy="21" rx="4" ry="10" fill="#0b0d14"/><circle cx="16" cy="13" r="9.5" fill="#0b0d14"/><circle cx="12" cy="12" r="2.4" fill="#F09432"/><circle cx="20" cy="12" r="2.4" fill="#F09432"/><circle cx="12" cy="12" r="0.9" fill="#0b0d14"/><circle cx="20" cy="12" r="0.9" fill="#0b0d14"/><ellipse cx="16" cy="19.5" rx="3" ry="2.2" fill="#5a2a04"/></svg>
+    <div><div class="bn">PostureHound</div><div class="bs">User Guide</div></div>
+  </div>
+  <nav class="toc" id="toc">
+    <div class="grp">Get started</div>
+    <a href="#about">What it is</a>
+    <a href="#prereq">Prerequisites</a>
+    <a href="#quickstart">Quick start (Docker)</a>
+    <a href="#config">Configuration</a>
+    <a href="#signin">First sign-in</a>
+    <div class="grp">Scan</div>
+    <a href="#collect">Get your data in</a>
+    <a href="#scanning">Run a scan</a>
+    <a href="#results">Read the results</a>
+    <a href="#graph">The attack graph</a>
+    <div class="grp">More</div>
+    <a href="#ado">Azure DevOps</a>
+    <a href="#cli">Command line</a>
+    <a href="#local">Run without Docker</a>
+    <a href="#security">Security model</a>
+    <a href="#trouble">Troubleshooting</a>
+  </nav>
+  <button class="themebtn" id="theme" type="button" aria-label="Toggle color theme">
+    <span id="themeicon">◐</span> <span id="themelbl">Theme</span>
+  </button>
+</aside>
+
+<!-- ============ MAIN ============ -->
+<main class="main">
+
+  <header class="hero">
+    <div class="eyebrow">Azure identity posture · read-only</div>
+    <h1>Find the path to Tier-0 before an attacker does.</h1>
+    <p class="lede">PostureHound ingests your Azure identity graph and shows exactly how a low-privileged
+    principal can escalate to tenant-critical control - as graded findings, framework-mapped, on a native
+    attack graph. This guide takes you from a clean machine to your first scan.</p>
+    <div class="badges">
+      <span class="badge"><span class="dot"></span> <b>Read-only</b> - never writes to your tenant</span>
+      <span class="badge"><b>Runs locally</b> · 127.0.0.1</span>
+      <span class="badge"><b>145</b> deterministic rules + AI</span>
+      <span class="badge"><b>Docker</b> or Python</span>
+    </div>
+  </header>
+
+  <section id="about">
+    <h2><span class="num">01</span> What it is</h2>
+    <p class="sub">One tool, three lenses on the same graph.</p>
+    <p>PostureHound reads an <strong>AzureHound</strong> collection (or pulls the graph live with a read-only
+    service principal) and assesses it three ways at once:</p>
+    <div class="grid">
+      <div class="card"><h4>Deterministic rules</h4><p>145 always-on rules across identity, apps, RBAC, Key Vault, storage, compute, and tenant governance - mapped to MITRE ATT&amp;CK, Azure Threat Matrix, and CIS.</p></div>
+      <div class="card"><h4>AI analyst pipeline</h4><p>Optional. 17 domain specialists plus a cross-domain synthesizer and an adversarial skeptic turn raw facts into compound, verified findings.</p></div>
+      <div class="card"><h4>Native attack graph</h4><p>Every escalation edge - ownership, RBAC, managed-identity theft, PIM - rendered as an interactive graph you can trace from any principal to Tier-0.</p></div>
+    </div>
+    <p>It never changes anything in Azure. The only input is a data file processed in memory (or read-only API
+    calls in live mode), and the whole app runs on your own machine.</p>
+  </section>
+
+  <section id="prereq">
+    <h2><span class="num">02</span> Prerequisites</h2>
+    <p class="sub">Pick the Docker path (recommended) or the Python path.</p>
+    <ul>
+      <li><strong>Docker Desktop</strong> (recommended) - or Python 3.11+ if you run it directly.</li>
+      <li><strong>Data to scan</strong>, either:
+        <ul>
+          <li>an <strong>AzureHound</strong> collection (<code>*.json</code> or a <code>.zip</code>) - see the <a href="https://github.com/SpecterOps/AzureHound">AzureHound</a> collector, or</li>
+          <li>a read-only Azure <strong>service principal</strong> for live collection (Reader + <code>Policy.Read.All</code>) - setup in <code>docs/AZURE_SP_SETUP.md</code>.</li>
+        </ul>
+      </li>
+      <li><strong>Optional:</strong> an Anthropic API key to enable the AI analyst pipeline. Everything except AI findings works without it.</li>
+    </ul>
+  </section>
+
+  <section id="quickstart">
+    <h2><span class="num">03</span> Quick start (Docker)</h2>
+    <p class="sub">From zero to the dashboard in about a minute.</p>
+    <ol class="steps">
+      <li>
+        <h4>Unpack &amp; enter the project</h4>
+        <div class="code"><button class="copy">Copy</button><pre>unzip posturehound.zip <span class="cmt"># or: git clone &lt;your-repo&gt;</span>
+cd posturehound</pre></div>
+      </li>
+      <li>
+        <h4>Create your environment file</h4>
+        <p>Copy the template - it documents every setting. You do <em>not</em> need to fill anything in to start.</p>
+        <div class="code"><button class="copy">Copy</button><pre>cp .env.example .env</pre></div>
+        <p>Then set a signing secret so sessions survive restarts (recommended):</p>
+        <div class="code"><button class="copy">Copy</button><pre><span class="cmt"># generates a random secret and appends it to .env</span>
+echo "PH_JWT_SECRET=$(python3 -c 'import secrets;print(secrets.token_urlsafe(48))')" &gt;&gt; .env</pre></div>
+      </li>
+      <li>
+        <h4>Build &amp; start</h4>
+        <div class="code"><button class="copy">Copy</button><pre>docker compose up -d --build</pre></div>
+        <p>The container binds to <code>127.0.0.1:31337</code> only and restarts automatically.</p>
+      </li>
+      <li>
+        <h4>Open the app</h4>
+        <p>Visit <a href="http://127.0.0.1:31337">http://127.0.0.1:31337</a> and sign in (next section).</p>
+      </li>
+    </ol>
+    <div class="note ok"><div class="nt">Health check</div>
+      <code>curl -s http://127.0.0.1:31337/health</code> should return <code>{"status":"ok","version":"2.0.0"}</code>.
+    </div>
+  </section>
+
+  <section id="config">
+    <h2><span class="num">04</span> Configuration</h2>
+    <p class="sub">Everything is set through environment variables in <code>.env</code>. Secrets stay in the environment - they are never written to disk by the app or returned by any API.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Variable</th><th>What it does</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>PH_JWT_SECRET</code></td><td>Signing secret for login sessions. Set it so sessions survive a restart.</td><td>random per install</td></tr>
+        <tr><td><code>PH_ADMIN_PASSWORD</code></td><td>Overrides the seeded admin password on first boot only.</td><td><code>posturehound</code></td></tr>
+        <tr><td><code>PH_AUTH_TTL_HOURS</code></td><td>How long a login stays valid.</td><td><code>12</code></td></tr>
+        <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Enables the AI analyst pipeline. Optional.</td><td>-</td></tr>
+        <tr><td><code>PH_ARG_TENANT_ID</code><br><code>PH_ARG_CLIENT_ID</code><br><code>PH_ARG_CLIENT_SECRET</code></td><td>Read-only service principal for <strong>live</strong> Azure collection.</td><td>-</td></tr>
+        <tr><td><code>PH_ADO_PAT</code></td><td>Azure DevOps token (Work Items: Read &amp; Write) to create work items from findings.</td><td>-</td></tr>
+        <tr><td><code>PH_MAX_UPLOAD_MB</code><br><code>PH_MAX_TOTAL_MB</code></td><td>Upload size caps for collection files.</td><td><code>512</code> / <code>1024</code></td></tr>
+        <tr><td><code>PH_DATA_DIR</code></td><td>Where scans, graphs and settings are stored.</td><td><code>~/.posturehound</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><div class="nt">Where secrets live</div>
+      The Anthropic key, service-principal secret, ADO token and JWT secret are read from the environment (or held in memory) and are never persisted to <code>settings.json</code>. The UI only ever shows whether each one is set.
+    </div>
+  </section>
+
+  <section id="signin">
+    <h2><span class="num">05</span> First sign-in</h2>
+    <p class="sub">The web UI requires authentication out of the box.</p>
+    <ol class="steps">
+      <li><h4>Sign in with the default credentials</h4>
+        <p>Username <code>admin</code>, password <code>posturehound</code> (or whatever you set in <code>PH_ADMIN_PASSWORD</code>).</p></li>
+      <li><h4>Change the password immediately</h4>
+        <p>Go to <strong>Settings → Account &amp; sign-in</strong>, enter the current password and a new one (8+ characters). The banner and the startup warning clear once you do.</p></li>
+    </ol>
+    <div class="note warn"><div class="nt">Change the default before you use it for real</div>
+      PostureHound holds your tenant's entire privilege map. It binds to localhost only, but the default password is public knowledge - rotate it, and set <code>PH_JWT_SECRET</code>, before storing any real scan.
+    </div>
+  </section>
+
+  <section id="collect">
+    <h2><span class="num">06</span> Get your data in</h2>
+    <p class="sub">Two interchangeable sources feed the same assessment.</p>
+    <h3>Option A - upload an AzureHound collection</h3>
+    <p>Run AzureHound against your tenant, then in PostureHound go to <strong>New scan</strong> and upload the
+    resulting files. A split collection (<code>ad.json</code> + <code>rm.json</code>) or a single <code>.zip</code>
+    both work - select them together.</p>
+    <h3>Option B - live collection (read-only)</h3>
+    <p>Configure a read-only service principal (<strong>Reader</strong> on the subscriptions + <strong>Policy.Read.All</strong>
+    on Microsoft Graph) under <strong>Settings → Azure live collection</strong>, then trigger a live scan. This also
+    sees network exposure, database config, and Conditional Access / MFA posture that AzureHound alone cannot.
+    Full setup is in <code>docs/AZURE_SP_SETUP.md</code>.</p>
+    <div class="note"><div class="nt">Re-assess anytime</div>
+      Raw collections are stored per scan, so you can re-run the analysis or rebuild the graph later without collecting again.
+    </div>
+  </section>
+
+  <section id="scanning">
+    <h2><span class="num">07</span> Run a scan</h2>
+    <p class="sub">Deterministic rules always run; AI is additive.</p>
+    <ol class="steps">
+      <li><h4>Start it</h4><p>From <strong>New scan</strong>, upload files (Option A) or trigger live collection (Option B). Toggle <strong>AI analysis</strong> on if you configured an Anthropic key.</p></li>
+      <li><h4>Watch the job</h4><p>Progress streams live - parsing, escalation-edge derivation, deterministic rules, then (if enabled) the AI specialists and skeptic review.</p></li>
+      <li><h4>Land on the dashboard</h4><p>When it finishes you get a posture grade, finding counts, and the attack graph - pre-warmed so it opens instantly.</p></li>
+    </ol>
+    <p>Prefer the terminal? The <a href="#cli">CLI</a> runs the same deterministic assessment headless.</p>
+  </section>
+
+  <section id="results">
+    <h2><span class="num">08</span> Read the results</h2>
+    <p class="sub">Findings carry a severity, a status you control, and - where relevant - a real attack path.</p>
+    <div class="sev">
+      <span class="chip"><i style="background:var(--crit)"></i>Critical</span>
+      <span class="chip"><i style="background:var(--high)"></i>High</span>
+      <span class="chip"><i style="background:var(--med)"></i>Medium</span>
+      <span class="chip"><i style="background:var(--low)"></i>Low</span>
+      <span class="chip"><i style="background:var(--ok)"></i>Info / best-practice</span>
+    </div>
+    <div class="grid">
+      <div class="card"><h4>Dashboard</h4><p>Grade &amp; score, finding counts, remediation progress, and the posture trend across all your scans.</p></div>
+      <div class="card"><h4>Findings &amp; report</h4><p>Each finding has why-it-matters, remediation, framework tags, and affected objects. Set a status (New / Resolved / Risk Accepted) and a validation label. Export HTML, PDF, CSV, or a leak-safe shareable report.</p></div>
+      <div class="card"><h4>Rules page</h4><p>Browse all 145 rules, filter by category / severity / framework, and see which fired, stayed silent, or were <em>not assessed</em> for the current scan.</p></div>
+      <div class="card"><h4>History &amp; compare</h4><p>Every scan is kept; compare any two to see what was resolved, what's new, and how the score moved.</p></div>
+    </div>
+    <div class="note"><div class="nt">"Not assessed" ≠ "pass"</div>
+      When a rule needs a property that wasn't collected, PostureHound reports it as <em>not assessed</em> rather than a clean pass - so a gap in your data never reads as a green light.
+    </div>
+  </section>
+
+  <section id="graph">
+    <h2><span class="num">09</span> The attack graph</h2>
+    <p class="sub">Trace how privilege actually flows - and where it ends.</p>
+    <p>Open <strong>Attack Graph</strong> to explore escalation paths on the graph PostureHound derived from your
+    tenant. <strong>Tier-0</strong> is the curated set of tenant-critical targets (Global Admin, subscription
+    owners, and the like). From here you can:</p>
+    <ul>
+      <li>See <strong>all shortest paths to Tier-0</strong>, or trace from any single principal.</li>
+      <li>Find the path between <strong>two nodes</strong>, or everything a node can reach.</li>
+      <li>Constrain a path to specific abuse primitives with the <strong>Via</strong> filter (e.g. <code>CanGrantRole</code>, <code>CanStealManagedIdentity</code>).</li>
+      <li>Rank paths by fewest hops or lowest difficulty, mark your own <strong>custom Tier-0</strong> targets, and save queries.</li>
+      <li>Jump straight from a finding to its own path with <strong>View in attack graph</strong>.</li>
+    </ul>
+    <p>When the embedded Cypher backend is available, an ad-hoc query box lets you run read-only Cypher over the graph.</p>
+  </section>
+
+  <section id="ado">
+    <h2><span class="num">10</span> Azure DevOps integration</h2>
+    <p class="sub">Optional. Turn a finding into a tracked work item.</p>
+    <p>Set <code>PH_ADO_PAT</code> (a token with <strong>Work Items: Read &amp; Write</strong>) in your environment,
+    then enable and configure the integration under <strong>Settings → Azure DevOps</strong> - organization URL,
+    project, work-item type (default <strong>Feature</strong>), area path, tags, default assignee, and an optional
+    parent Epic. A <strong>Create work item</strong> button then appears on each finding in the report.</p>
+    <div class="note"><div class="nt">Token handling</div>
+      The PAT is read only from the environment - never written to disk and never returned by any API.
+    </div>
+  </section>
+
+  <section id="cli">
+    <h2><span class="num">11</span> Command line</h2>
+    <p class="sub">Headless assessment for pipelines and quick checks.</p>
+    <div class="code"><button class="copy">Copy</button><pre><span class="cmt"># assess a collection, print findings as JSON</span>
+python -m posturehound.cli scan ad.json rm.json
+
+<span class="cmt"># write an HTML report, only Medium and above</span>
+python -m posturehound.cli scan collection.zip --format html --out report.html --min-severity Medium
+
+<span class="cmt"># just validate/parse a collection without assessing</span>
+python -m posturehound.cli validate collection.zip</pre></div>
+    <p>The exit code is non-zero when Critical findings are present, so <code>scan</code> drops straight into CI gates.</p>
+  </section>
+
+  <section id="local">
+    <h2><span class="num">12</span> Run without Docker</h2>
+    <p class="sub">Straight Python, for development.</p>
+    <ol class="steps">
+      <li><h4>Install dependencies</h4>
+        <div class="code"><button class="copy">Copy</button><pre>python3 -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -r requirements.txt</pre></div>
+      </li>
+      <li><h4>Start the server</h4>
+        <div class="code"><button class="copy">Copy</button><pre><span class="cmt"># uses HOST/PORT from the environment; defaults to 127.0.0.1</span>
+./start.sh
+<span class="cmt"># or directly:</span>
+python -m uvicorn posturehound.api:app --host 127.0.0.1 --port 8000</pre></div>
+      </li>
+    </ol>
+    <div class="note"><div class="nt">PDF reports</div>
+      The PDF export uses WeasyPrint, which needs native Pango/Cairo libraries. The Docker image bundles them; for a local install see the WeasyPrint docs for your OS.
+    </div>
+  </section>
+
+  <section id="security">
+    <h2><span class="num">13</span> Security model</h2>
+    <p class="sub">This tool holds sensitive data, so it defends itself.</p>
+    <ul>
+      <li><strong>Read-only:</strong> never writes to your tenant; no SSRF; it never executes collection content.</li>
+      <li><strong>Local by default:</strong> the container publishes to <code>127.0.0.1</code> only.</li>
+      <li><strong>Authenticated:</strong> every request is validated against a signed JWT; the session cookie is httpOnly and SameSite-strict.</li>
+      <li><strong>Secrets stay out of storage:</strong> API keys, the SP secret, the ADO PAT and the JWT secret live in the environment, never in <code>settings.json</code> or any API response.</li>
+      <li><strong>Hardened responses:</strong> strict Content-Security-Policy, no-sniff, frame-deny, and upload size caps.</li>
+      <li><strong>Shareable report is scrubbed</strong> of raw object ids and internal detail before it leaves the tool.</li>
+    </ul>
+    <p>See <code>docs/THREAT_MODEL.md</code> and <code>docs/PRD-auth.md</code> for the full picture.</p>
+  </section>
+
+  <section id="trouble">
+    <h2><span class="num">14</span> Troubleshooting</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td>Can't reach the app / connection refused</td><td>Confirm the container is up (<code>docker compose ps</code>) and that you're using <code>127.0.0.1:31337</code>. If Docker Desktop was closed, reopen it - the container auto-restarts.</td></tr>
+        <tr><td>Signed out after a restart</td><td>Set <code>PH_JWT_SECRET</code> in <code>.env</code> and rebuild - otherwise the signing secret regenerates and invalidates old sessions.</td></tr>
+        <tr><td>Forgot the password</td><td>Stop the app and delete <code>~/.posturehound/auth.json</code>; the default admin account is reseeded on next start.</td></tr>
+        <tr><td>No AI findings</td><td>Set <code>ANTHROPIC_API_KEY</code> (env or Settings) and enable AI on the scan. Deterministic findings appear regardless.</td></tr>
+        <tr><td>Domains show as "not assessed"</td><td>Those need the live-collection service principal (network, databases, Conditional Access aren't in an AzureHound file). Configure the SP.</td></tr>
+        <tr><td>PDF export fails locally</td><td>Install WeasyPrint's native Pango/Cairo dependencies, or use the Docker image which includes them.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    <p><strong>PostureHound</strong> v2.0.0 - read-only Azure identity posture. Runs entirely on your machine.</p>
+    <p>More docs: <a href="PRD.md">PRD.md</a> · <a href="PRD-auth.md">PRD-auth.md</a> · <a href="COVERAGE.md">COVERAGE.md</a> · <a href="DATA_MODEL.md">DATA_MODEL.md</a> · <a href="THREAT_MODEL.md">THREAT_MODEL.md</a> · <a href="AZURE_SP_SETUP.md">AZURE_SP_SETUP.md</a></p>
+  </footer>
+
+</main>
+</div>
+
+<script>
+// Copy buttons
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var pre = btn.parentElement.querySelector('pre');
+    var text = pre ? pre.innerText : '';
+    var done = function(){ btn.textContent='Copied'; btn.classList.add('done'); setTimeout(function(){btn.textContent='Copy';btn.classList.remove('done');},1600); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(function(){ fallback(text,done); });
+    } else { fallback(text,done); }
+  });
+});
+function fallback(text,done){
+  try{ var r=document.createRange(), s=window.getSelection(); var el=document.createElement('textarea');
+    el.value=text; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el); done();
+  }catch(e){}
+}
+// Theme toggle (cycles auto → light → dark), persisted best-effort
+(function(){
+  var root=document.documentElement, btn=document.getElementById('theme');
+  var icon=document.getElementById('themeicon'), lbl=document.getElementById('themelbl');
+  var order=['auto','light','dark'], labels={auto:'Auto',light:'Light',dark:'Dark'}, icons={auto:'◐',light:'☀',dark:'☾'};
+  var cur='auto';
+  try{ cur=localStorage.getItem('ph-theme')||'auto'; }catch(e){}
+  function apply(t){
+    if(t==='auto'){ root.removeAttribute('data-theme'); } else { root.setAttribute('data-theme',t); }
+    if(icon)icon.textContent=icons[t]; if(lbl)lbl.textContent=labels[t];
+    try{ localStorage.setItem('ph-theme',t); }catch(e){}
+  }
+  apply(cur);
+  btn.addEventListener('click', function(){ cur=order[(order.indexOf(cur)+1)%order.length]; apply(cur); });
+})();
+// Scrollspy for the TOC
+(function(){
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var map={}; links.forEach(function(a){ map[a.getAttribute('href').slice(1)]=a; });
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if(en.isIntersecting){ links.forEach(function(a){a.classList.remove('on');}); var a=map[en.target.id]; if(a)a.classList.add('on'); }
+    });
+  }, {rootMargin:'-10% 0px -80% 0px'});
+  document.querySelectorAll('main section[id]').forEach(function(s){ obs.observe(s); });
+})();
+</script>
+</body>
+</html>

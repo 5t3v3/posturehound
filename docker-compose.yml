@@ -1,0 +1,42 @@
+# PostureHound - run the scanner as a long-lived container.
+#
+#   docker compose up -d --build      # build + start in the background
+#   docker compose logs -f            # follow logs
+#   docker compose down               # stop and remove the container (data persists)
+#
+# restart: unless-stopped means the container auto-starts when Docker starts
+# (set Docker Desktop to "start on login"), auto-restarts if it crashes, and
+# resumes automatically when the Mac wakes from sleep - no manual restart.
+#
+# NOTE: on a laptop the container is still PAUSED while the machine is actually
+# asleep (Docker's Linux VM sleeps with the host). For true 24/7 uptime, run this
+# same compose file on the always-on VM instead.
+services:
+  posturehound:
+    build: .
+    image: posturehound:latest
+    container_name: posturehound
+    restart: unless-stopped
+    ports:
+      # localhost-only by default. To reach it over the VPN/LAN, change to
+      # "31337:8000" and restrict the source at the NSG / host firewall.
+      - "127.0.0.1:31337:8000"
+    environment:
+      - PH_DATA_DIR=/data
+      - WORKERS=1
+    # Optional secrets/config loaded from .env (git-ignored). Every key in .env is
+    # injected into the container environment - no per-key entry needed here:
+    #   ANTHROPIC_API_KEY        AI finding generation
+    #   PH_ARG_TENANT_ID/CLIENT_ID/CLIENT_SECRET   live Azure collection (Reader SP)
+    #   PH_ADO_PAT               Azure DevOps work-item creation (Work Items R/W scope)
+    # Do NOT also list these under `environment:` above - an empty value there would
+    # OVERRIDE the .env value (that override precedence is how the AI-disable file works).
+    # Copy .env.example to .env to use this.
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Bind-mount the existing data dir so the container shares your scan history,
+      # settings, custom Tier-0 and saved queries (one source of truth, no 1.9 GB
+      # copy). Override PH_HOST_DATA for a different location (e.g. on the VM).
+      - ${PH_HOST_DATA:-${HOME}/.posturehound}:/data

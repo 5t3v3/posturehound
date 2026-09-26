@@ -1,0 +1,3 @@
+# Test-only dependencies. setup.sh installs these so the verification step in
+# START-HERE.md ("Verify the install") works on a fresh clone.
+pytest>=8.0
