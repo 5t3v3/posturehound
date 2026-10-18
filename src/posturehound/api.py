@@ -9,7 +9,7 @@ Security posture of the app itself (the tool holds a tenant's privilege map):
   * Security headers: strict CSP (no external origins), nosniff, frame-deny,
     referrer policy, permissions policy.
   * CORS: disabled by default (same-origin UI). Configure explicit origins via
-    env if a separate frontend is used - never wildcard with credentials.
+    env if a separate frontend is used, never wildcard with credentials.
 """
 from __future__ import annotations
 
@@ -70,15 +70,46 @@ def _current_user(request: Request) -> "str | None":
     return payload.get("sub") if payload else None
 
 
+def _route_permission(method: str, path: str) -> "str | None":
+    """The RBAC permission a request requires, or None for any-authenticated user. Kept in one
+    place so the SPA navigation and the API agree on who can reach each screen/feature."""
+    p = path
+    if p.startswith("/api/users") or p.startswith("/api/roles"):
+        return "users"
+    if p.startswith("/api/scans/") and "/graph" in p:
+        return "graph"
+    if p.startswith("/api/scans/") and (p.endswith("/trace") or p.endswith("/trace.jsonl")):
+        return "traces"
+    if p == "/api/rules" or (p.startswith("/api/scans/") and p.endswith("/rules")):
+        return "rules"
+    if p == "/api/cis" or (p.startswith("/api/scans/") and p.endswith("/cis")):
+        return "compliance"
+    if p.startswith("/api/scans/") and p.endswith("/workitem"):
+        return "ado"
+    if method in ("POST", "PUT", "DELETE") and (p == "/api/settings" or p.startswith("/api/integrations/")):
+        return "settings"
+    if method == "POST" and (p.startswith("/api/assess/") or p.startswith("/api/collect/")):
+        return "scan"
+    if p.startswith("/api/scans/") and (p.endswith("/report") or p.endswith("/report.pdf")
+                                        or p.endswith("/export.csv") or p.endswith("/roadmap")):
+        return "findings"
+    return None
+
+
 def _auth_guard(request: Request) -> None:
-    """Reject any request to a protected path without a valid token. Global dependency."""
+    """Reject any request to a protected path without a valid token, and enforce the role's
+    permission for the feature. Global dependency."""
     if not _authmod.enforcement_enabled():
         return
     path = request.url.path
     if path in _PUBLIC_PATHS or path.startswith("/static/"):
         return
-    if _current_user(request) is None:
+    user = _current_user(request)
+    if user is None:
         raise HTTPException(status_code=401, detail="Authentication required. Please sign in.")
+    perm = _route_permission(request.method, path)
+    if perm and not store.has_permission(user, perm):
+        raise HTTPException(status_code=403, detail="Your role does not have access to this feature.")
 
 
 app = FastAPI(title="PostureHound", version=__version__,
@@ -121,9 +152,10 @@ async def _startup():
     if _authmod.enforcement_enabled():
         try:
             store.bootstrap_auth()
-            if store.auth_must_change():
-                _log.warning("PostureHound is using the DEFAULT password for user '%s'. "
-                             "Change it in Settings immediately.", store.get_auth_username())
+            _default_pw = [u["username"] for u in store.list_users() if u["must_change"]]
+            if _default_pw:
+                _log.warning("PostureHound user(s) %s still use the DEFAULT password. "
+                             "Change it in Settings immediately.", ", ".join(_default_pw))
         except Exception:
             _log.warning("auth bootstrap failed at startup", exc_info=True)
 
@@ -220,8 +252,8 @@ def _set_auth_cookie(resp: Response, username: str, request: Request) -> None:
     resp.set_cookie(
         AUTH_COOKIE, token,
         max_age=_authmod.ttl_seconds(),
-        httponly=True,                       # unreachable from JS - XSS can't steal it
-        samesite="strict",                   # not sent cross-site - neutralises CSRF / rebinding
+        httponly=True,                       # unreachable from JS, XSS can't steal it
+        samesite="strict",                   # not sent cross-site, neutralises CSRF / rebinding
         secure=(request.url.scheme == "https"),
         path="/",
     )
@@ -233,11 +265,13 @@ async def api_auth_login(request: Request, username: str = Form(...), password: 
     username = (username or "").strip()
     if _login_locked(username):
         raise HTTPException(status_code=429, detail="Too many attempts. Wait a minute and try again.")
-    if not store.verify_credentials(username, password):
+    rec = store.verify_credentials(username, password)
+    if not rec:
         _record_login_fail(username)
         raise HTTPException(status_code=401, detail="Invalid username or password.")
     _LOGIN_FAILS.pop(username, None)
-    resp = JSONResponse({"ok": True, "username": username, "must_change": store.auth_must_change()})
+    resp = JSONResponse({"ok": True, "username": username, "role": rec["role"],
+                         "must_change": rec["must_change"]})
     _set_auth_cookie(resp, username, request)
     return resp
 
@@ -252,28 +286,114 @@ async def api_auth_logout():
 @app.get("/api/auth/me")
 async def api_auth_me(request: Request):
     if not _authmod.enforcement_enabled():
-        return {"authenticated": True, "username": store.get_auth_username(),
-                "must_change": False, "enforced": False}
+        # Auth disabled (test/dev): full access, so report every permission.
+        return {"authenticated": True, "username": "local", "role": "admin",
+                "permissions": store.PERMISSION_KEYS, "must_change": False, "enforced": False}
     user = _current_user(request)
     if not user:
         return {"authenticated": False}
-    return {"authenticated": True, "username": user, "must_change": store.auth_must_change(),
-            "enforced": True}
+    return {"authenticated": True, "username": user,
+            "role": (store.get_user(user) or {}).get("role", "viewer"),
+            "permissions": sorted(store.user_permissions(user)),
+            "must_change": store.auth_must_change(user), "enforced": True}
 
 
 @app.post("/api/auth/password")
 async def api_auth_password(request: Request, current_password: str = Form(...),
-                            new_password: str = Form(...), new_username: str = Form("")):
-    user = _current_user(request) or store.get_auth_username()
-    if not store.verify_credentials(user, current_password):
+                            new_password: str = Form(...)):
+    """Self-service: the signed-in user changes their OWN password."""
+    user = _current_user(request)
+    if not user or not store.verify_credentials(user, current_password):
         raise HTTPException(status_code=403, detail="Current password is incorrect.")
-    if len(new_password or "") < 8:
-        raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")
-    final_user = (new_username or "").strip() or user
-    store.set_credentials(final_user, new_password)
-    resp = JSONResponse({"ok": True, "username": final_user})
-    _set_auth_cookie(resp, final_user, request)   # re-issue (username may have changed)
+    try:
+        store.set_user_password(user, new_password, must_change=False)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    resp = JSONResponse({"ok": True, "username": user})
+    _set_auth_cookie(resp, user, request)   # re-issue so the session stays valid
     return resp
+
+
+# ── User & role management (admin only; gated on the "users" permission) ─────────
+@app.get("/api/users")
+async def api_users_list():
+    return {"users": store.list_users(), "roles": store.list_roles(),
+            "permissions": store.permission_catalog()}
+
+
+@app.post("/api/users")
+async def api_users_create(username: str = Form(...), password: str = Form(...),
+                           role: str = Form(...)):
+    try:
+        store.create_user(username, password, role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/users/{username}")
+async def api_users_delete(request: Request, username: str):
+    if username == _current_user(request):
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+    try:
+        store.delete_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.post("/api/users/{username}/role")
+async def api_users_set_role(username: str, role: str = Form(...)):
+    try:
+        store.set_user_role(username, role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.post("/api/users/{username}/password")
+async def api_users_reset_password(username: str, new_password: str = Form(...)):
+    """Admin reset of another user's password."""
+    try:
+        store.set_user_password(username, new_password, must_change=False)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.get("/api/roles")
+async def api_roles_list():
+    return {"roles": store.list_roles(), "permissions": store.permission_catalog()}
+
+
+@app.post("/api/roles")
+async def api_roles_create(name: str = Form(...), label: str = Form(""),
+                           permissions: str = Form("")):
+    perms = [p.strip() for p in (permissions or "").split(",") if p.strip()]
+    try:
+        store.save_role(name, label, perms, create=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.post("/api/roles/{name}")
+async def api_roles_update(name: str, label: str = Form(""), permissions: str = Form("")):
+    perms = [p.strip() for p in (permissions or "").split(",") if p.strip()]
+    try:
+        store.save_role(name, label, perms, create=False)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/roles/{name}")
+async def api_roles_delete(name: str):
+    try:
+        store.delete_role(name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
 
 
 def _ai_coherence_gate(result: dict, g, key: str | None, *, on_progress=None, trace=None) -> None:
@@ -282,7 +402,7 @@ def _ai_coherence_gate(result: dict, g, key: str | None, *, on_progress=None, tr
     A wrong-plane finding is re-anchored (path recomputed, summary refreshed); a
     right-primitive-but-divergent-route finding has its path summary
     realigned to the deterministic computed path. Either way the report ships a coherent
-    path/description pair with no leftover discrepancy note. Best-effort - never
+    path/description pair with no leftover discrepancy note. Best-effort, never
     blocks the scan."""
     key = (key or "").strip() or store.get_api_key()
     findings = result.get("findings") or []
@@ -290,7 +410,7 @@ def _ai_coherence_gate(result: dict, g, key: str | None, *, on_progress=None, tr
         return
     settings = store.get_settings()
     # run_coherence_check -> _call_with_tools needs the RAW Anthropic client (client.messages),
-    # NOT the LLMClient wrapper - the same client the specialists and cartographer use.
+    # NOT the LLMClient wrapper, the same client the specialists and cartographer use.
     try:
         client = ai.ai_findings.build_client(key)
     except Exception:
@@ -324,7 +444,7 @@ def _ai_coherence_gate(result: dict, g, key: str | None, *, on_progress=None, tr
             continue
         f["max_impact_summary"] = ai.ai_findings._cartographer_fallback_summary(p)
     # Route-divergent findings keep their (unchanged) computed path; only the narration
-    # was out of step, so realign the path summary to the actual path - no recompute,
+    # was out of step, so realign the path summary to the actual path, no recompute,
     # no re-anchor. This turns a disclosed discrepancy into a coherent path narration.
     for f in realigned:
         p = f.get("max_impact_path")
@@ -358,12 +478,40 @@ def _maybe_generate(result: dict, g, ai_on: bool, key: str | None, *,
                                   reuse_analysis=reuse_analysis, trace=trace)
 
 
+def _bare_tenant(t) -> str:
+    """A tenant id as a bare lower-cased GUID. AzureHound stores the tenant node id as
+    '/tenants/<guid>' while the SP tenant is the bare GUID, so normalise both before comparing."""
+    s = str(t or "").strip().lower()
+    return s.split("/")[-1] if "/" in s else s
+
+
+def _cross_tenant_block(result: dict) -> "tuple[str, str] | None":
+    """Return (scan_tenant, sp_tenant) when the assessed collection's tenant is KNOWN and DIFFERS
+    from the configured service principal's tenant: live Graph/ARG collection would then merge a
+    different tenant's data into this scan (e.g. an AzureHound upload from tenant A while the SP is
+    configured for tenant B). Returns None when the tenants match, or when either is unknown (an
+    upload with no tenant marker, or no SP configured, in which case the live-attach functions
+    already no-op / stay honest about coverage)."""
+    scan_t = _bare_tenant(result.get("tenant_id"))
+    if not scan_t:
+        return None
+    from . import azure_arg
+    try:
+        creds = azure_arg.credentials_from_settings()
+    except Exception:
+        creds = None
+    sp_t = _bare_tenant(getattr(creds, "tenant_id", "")) if creds else ""
+    if not sp_t:
+        return None
+    return None if scan_t == sp_t else (scan_t, sp_t)
+
+
 def _attach_arg(result: dict, *, on_progress=None) -> None:
     """Collect Azure Resource Graph (v2 Track B) and merge its findings.
 
     Runs only when a Reader service principal is configured; otherwise records an
     honest coverage status so the network/database domains are never implied
-    clean. Best-effort - a collection failure is captured in coverage, never
+    clean. Best-effort, a collection failure is captured in coverage, never
     raised into the scan.
     """
     from . import arg_rules, azure_arg
@@ -373,7 +521,7 @@ def _attach_arg(result: dict, *, on_progress=None) -> None:
     except Exception:
         creds = None
     if creds is None:
-        cov["arg_status"] = ("not collected - no Azure Resource Graph service principal "
+        cov["arg_status"] = ("not collected, no Azure Resource Graph service principal "
                              "configured (network/database config not assessed)")
         return
 
@@ -411,7 +559,7 @@ def _attach_graph(result: dict, *, on_progress=None) -> None:
     """Collect identity-plane config from Microsoft Graph (v2 Track B) and merge
     its findings. Gated on the same Reader SP; the SP additionally needs the Graph
     permission Policy.Read.All, otherwise Graph returns 403 and this records an
-    honest 'not collected' status. Best-effort - never raised into a scan."""
+    honest 'not collected' status. Best-effort, never raised into a scan."""
     from . import azure_arg, azure_graph, graph_rules
     cov = result.setdefault("coverage", {})
     try:
@@ -419,7 +567,7 @@ def _attach_graph(result: dict, *, on_progress=None) -> None:
     except Exception:
         creds = None
     if creds is None:
-        cov["graph_status"] = "not collected - no service principal configured"
+        cov["graph_status"] = "not collected, no service principal configured"
         return
 
     def _log(m):
@@ -444,7 +592,7 @@ def _attach_graph(result: dict, *, on_progress=None) -> None:
                                + (f"; {len(gr.errors)} error(s)" if gr.errors else ""))
         # Clear an identity blind-spot ONLY for the endpoint that actually returned.
         # A Conditional Access 403 with security-defaults OK must NOT clear
-        # "Conditional Access" - its rules are not_assessed in that case.
+        # "Conditional Access", its rules are not_assessed in that case.
         nad = cov.get("not_assessable_domains") or []
         if gr.collected.get("conditionalAccess"):
             nad = [d for d in nad if "MFA" not in d and "Conditional Access" not in d]
@@ -452,7 +600,7 @@ def _attach_graph(result: dict, *, on_progress=None) -> None:
             nad = [d for d in nad if "MFA" not in d]   # security defaults inform MFA only
         cov["not_assessable_domains"] = nad
     else:
-        cov["graph_status"] = ("not collected - Microsoft Graph unreachable or the SP lacks "
+        cov["graph_status"] = ("not collected, Microsoft Graph unreachable or the SP lacks "
                                "Policy.Read.All" + (f" ({gr.errors[0]})" if gr.errors else ""))
     if gr.errors:
         cov["graph_errors"] = gr.errors
@@ -462,7 +610,7 @@ def _scan_health(result: dict, *, use_ai: bool) -> dict:
     """Post-scan sanity check so a SILENT failure never looks like 'few findings'.
 
     A crashed AI stage (ai_enabled=False), a whole finding-source coming back empty,
-    or failed specialists are surfaced explicitly - both in
+    or failed specialists are surfaced explicitly, both in
     the live log and on the saved scan (result['scan_health']) so the report can banner
     them. Warnings, never fatal: the scan still saves."""
     warnings: list[dict] = []
@@ -488,20 +636,20 @@ def _scan_health(result: dict, *, use_ai: bool) -> dict:
             return ""
 
         if not result.get("ai_enabled"):
-            warn("critical", "AI analysis did NOT run - findings are deterministic-rules only. "
+            warn("critical", "AI analysis did NOT run, findings are deterministic-rules only. "
                              f"Cause: {result.get('ai_error') or 'unknown'}")
         elif ai_gen == 0 and (failed or stage_err):
             # The AI STAGE ran but every specialist errored (e.g. an APIConnectionError storm):
             # effectively NO AI analysis was produced. That is a FAILED scan, not a soft
-            # "few findings" - the report is deterministic-only. Flag it critical and actionable.
+            # "few findings", the report is deterministic-only. Flag it critical and actionable.
             warn("critical",
-                 f"AI analysis FAILED - {len(failed)} specialist(s) errored and 0 AI findings "
+                 f"AI analysis FAILED, {len(failed)} specialist(s) errored and 0 AI findings "
                  f"were produced, so this scan is DETERMINISTIC-ONLY (rules, no AI reasoning or "
                  f"attack narration). First error: {_first_reason() or 'unknown'}. This is "
-                 f"usually a transient network/API problem - re-run the scan.")
+                 f"usually a transient network/API problem, re-run the scan.")
         else:
             if ai_gen == 0:
-                warn("warning", "AI ran but produced 0 findings - every specialist returned "
+                warn("warning", "AI ran but produced 0 findings, every specialist returned "
                                 "nothing, which is unusual on a non-trivial tenant. Check "
                                 "ai_stage_errors / ai_failed_specialists.")
             if failed:
@@ -511,7 +659,7 @@ def _scan_health(result: dict, *, use_ai: bool) -> dict:
                 warn("warning", f"{len(stage_err)} AI stage error(s); first: " + _first_reason())
 
     if det == 0:
-        warn("warning", "No deterministic rule findings - the always-on safety net fired "
+        warn("warning", "No deterministic rule findings, the always-on safety net fired "
                         "nothing. Verify the collection carries role assignments / RBAC.")
 
     status = ("critical" if any(w["level"] == "critical" for w in warnings)
@@ -574,11 +722,32 @@ def _run_scan_pipeline(job, blobs, names, *, use_ai, fresh_analysis, key, settin
 
     # Azure Resource Graph + Microsoft Graph (v2 Track B) BEFORE the AI pipeline,
     # so their findings are in the deterministic set the AI reasons over and
-    # counts - otherwise the AI executive summary (generated inside the pipeline
+    # counts, otherwise the AI executive summary (generated inside the pipeline
     # from severity_counts) would undercount while the rescored badges include
     # them. Runs only when a Reader SP is configured; best-effort.
-    _attach_arg(result, on_progress=job.append)
-    _attach_graph(result, on_progress=job.append)
+    #
+    # Tenant-match guard: the live ARG/Graph collection always reads the CONFIGURED SP's tenant.
+    # If this scan's collection is from a DIFFERENT tenant (e.g. an AzureHound file uploaded from
+    # tenant A while the SP is set up for tenant B), merging would silently mix two tenants' data
+    # into one result. Skip the live augmentation in that case and disclose it, rather than assess
+    # a Frankenstein tenant. A live collection and a same-tenant upload are unaffected.
+    _mismatch = _cross_tenant_block(result)
+    if _mismatch:
+        _scan_t, _sp_t = _mismatch
+        _msg = (f"Live Azure Resource Graph / Microsoft Graph collection skipped: this collection is "
+                f"tenant {_scan_t}, but the configured service principal is tenant {_sp_t}. Merging "
+                f"would mix two tenants, so only the uploaded collection was assessed. Upload a "
+                f"collection from the SP's tenant, or reconfigure the SP, to include the resource "
+                f"and identity-config planes.")
+        job.append("[TENANT] " + _msg)
+        _cov = result.setdefault("coverage", {})
+        _cov["arg_status"] = "not collected, cross-tenant guard: " + _msg
+        _cov["graph_status"] = "not collected, cross-tenant guard: " + _msg
+        result.setdefault("collection", {}).setdefault("warnings", []).append(
+            {"level": "warning", "code": "CROSS_TENANT_SKIP", "message": _msg})
+    else:
+        _attach_arg(result, on_progress=job.append)
+        _attach_graph(result, on_progress=job.append)
 
     # ── AI pipeline ──────────────────────────────────────────────────────
     if job.cancelled:
@@ -599,9 +768,11 @@ def _run_scan_pipeline(job, blobs, names, *, use_ai, fresh_analysis, key, settin
     # Rescore after all findings (deterministic + AI + ARG + Graph) are in.
     # The engine computed score from deterministic rules only; this replaces it
     # with the final score over the complete finding set.
-    result["score"] = rescore_from_findings(result.get("findings", []))
+    result["score"] = rescore_from_findings(
+        result.get("findings", []),
+        ai_lead_confidence=settings.get("ai_lead_confidence", 50))
 
-    # Post-scan health check - a silent AI/coverage failure is surfaced
+    # Post-scan health check, a silent AI/coverage failure is surfaced
     # loudly here (log + result['scan_health']) instead of masquerading as "few findings".
     result["scan_health"] = _scan_health(result, use_ai=use_ai)
     for _w in result["scan_health"]["warnings"]:
@@ -705,7 +876,7 @@ async def api_assess_start_live(use_ai: bool = Form(False),
         for e in errors:
             job.append(f"[Live] Warning: {e}")
         if not records:
-            job.finish(error="Live collection returned no data - check the SP has "
+            job.finish(error="Live collection returned no data, check the SP has "
                              "Directory.Read.All (admin-consented) and Reader on the tenant.")
             return
         blobs = [(azure_dir.to_collection_bytes(records), "live-collection.json")]
@@ -741,7 +912,7 @@ def _start_collect_job(blobs, names):
 @app.post("/api/collect/start")
 async def api_collect_start(files: list[UploadFile] | None = File(None),
                             file: UploadFile | None = File(None)):
-    """Collect from an AzureHound upload WITHOUT assessing yet - builds the inventory
+    """Collect from an AzureHound upload WITHOUT assessing yet, builds the inventory
     for the optional Tier-0 selection step. Assess with /api/assess/from-collection."""
     blobs = await _collect(files, file)
     return _start_collect_job(blobs, [n for _, n in blobs])
@@ -768,7 +939,7 @@ async def api_collect_start_live():
         for e in errors:
             job.append(f"[Live] Warning: {e}")
         if not records:
-            job.finish(error="Live collection returned no data - check the SP has "
+            job.finish(error="Live collection returned no data, check the SP has "
                              "Directory.Read.All (admin-consented) and Reader on the tenant.")
             return
         blobs = [(azure_dir.to_collection_bytes(records), "live-collection.json")]
@@ -787,7 +958,7 @@ async def api_collect_start_live():
 
 @app.post("/api/collect/from-scan")
 async def api_collect_from_scan(scan_id: str = Form(...)):
-    """Re-run from a previous scan's STORED collection - no re-collection from Azure.
+    """Re-run from a previous scan's STORED collection, no re-collection from Azure.
     Reuses the raw blobs captured at that scan, so you can re-assess with different
     Tier-0 selections (or after engine changes) without hitting the tenant again."""
     if not store.get_scan(scan_id):
@@ -973,7 +1144,7 @@ async def api_job_trace(job_id: str, offset: int = Query(0), format: str = Query
 @app.get("/api/scans/{scan_id}/trace")
 async def api_scan_trace(scan_id: str, format: str = Query("log")):
     """The full verbose AI trace for a saved scan (how the AI thought, per stage). Served as
-    plain text (.log) or JSON-lines (.jsonl). Local artifact - contains tenant specifics, so
+    plain text (.log) or JSON-lines (.jsonl). Local artifact, contains tenant specifics, so
     it is never part of the shareable external report."""
     r = store.get_scan(scan_id)
     if not r:
@@ -991,7 +1162,7 @@ async def api_scan_trace(scan_id: str, format: str = Query("log")):
 
 @app.get("/api/scans/{scan_id}/collection")
 async def api_scan_collection(scan_id: str):
-    """Download the raw collection that was assessed - the AzureHound-format {meta, data}
+    """Download the raw collection that was assessed, the AzureHound-format {meta, data}
     JSON. For a LIVE-collected scan this is PostureHound's collector output (meta.type
     'azure', source 'posturehound-live'); for an UPLOADED scan it is the original file(s),
     verbatim. If a scan carried multiple files they are returned as a zip."""
@@ -1028,7 +1199,7 @@ _GRAPH_CACHE_MAX = 8
 def _attack_graph_for(scan_id: str):
     """Load a scan's attack-graph snapshot (cached, else rebuilt from stored raw) and wrap
     it for querying. 404 if the scan or its raw collection is unavailable."""
-    # Cheap existence check only - never a full load+finalize just to guard (this runs on
+    # Cheap existence check only, never a full load+finalize just to guard (this runs on
     # every graph request, including cache hits).
     if not store.scan_exists(scan_id):
         raise HTTPException(status_code=404, detail="Scan not found.")
@@ -1082,22 +1253,25 @@ def api_graph_meta(scan_id: str):
 
 @app.get("/api/scans/{scan_id}/graph/overview")
 def api_graph_overview(scan_id: str):
-    """Every shortest attack path to Tier-0 - the default 'all paths we found' view."""
+    """Every shortest attack path to Tier-0, the default 'all paths we found' view."""
     ag = _attack_graph_for(scan_id)
     return JSONResponse(ag.to_elements(ag.overview()))
 
 
 @app.get("/api/scans/{scan_id}/graph/node")
 def api_graph_node(scan_id: str, id: str):
-    """Full collected detail for one node (id passed as a query param - ids contain slashes),
+    """Full collected detail for one node (id passed as a query param, ids contain slashes),
     plus the findings that reference it."""
     ag = _attack_graph_for(scan_id)
     d = ag.node_detail(id)
     if d is None:
         raise HTTPException(status_code=404, detail="Node not found in this scan's graph.")
     scan = store.get_scan(scan_id) or {}
+    from . import report as _report
     related = []
-    for f in (scan.get("findings") or []):
+    # Use the canonical display view so a heavily-flagged SP shows its consolidated group card (not
+    # the un-stripped individual findings), matching the report the user clicks through to.
+    for f in _report.display_findings(scan):
         if any((e or {}).get("id") == id for e in (f.get("entities") or [])):
             related.append({"title": f.get("title"), "severity": f.get("severity"),
                             "rule_id": f.get("rule_id"), "key": store.finding_key(f)})
@@ -1171,7 +1345,7 @@ def api_graph_path(scan_id: str, source: str, target: str, mode: str = "hops", v
 @app.get("/api/scans/{scan_id}/graph/reachable")
 def api_graph_reachable(scan_id: str, source: str, cap: int = 600, via: str = ""):
     """Everything reachable FROM `source` (any node, not only Tier-0) as a forward DAG, optionally
-    restricted to `via` relationship types - the explorer's 'From → all relationships' objective."""
+    restricted to `via` relationship types, the explorer's 'From → all relationships' objective."""
     ag = _attack_graph_for(scan_id)
     via_list = [x for x in (via or "").split(",") if x.strip()] or None
     return JSONResponse(ag.to_elements(ag.reachable_from(source, via=via_list,
@@ -1180,7 +1354,7 @@ def api_graph_reachable(scan_id: str, source: str, cap: int = 600, via: str = ""
 
 @app.get("/api/scans/{scan_id}/graph/paths-to")
 def api_graph_paths_to(scan_id: str, target: str, cap: int = 600):
-    """Every principal that can reach `target`, with all tied shortest routes - used when the
+    """Every principal that can reach `target`, with all tied shortest routes, used when the
     explorer has a 'To' but no 'From' (show everything leading to the selected item)."""
     ag = _attack_graph_for(scan_id)
     return JSONResponse(ag.to_elements(ag.paths_to(target, cap=max(20, min(int(cap), 1500)))))
@@ -1199,7 +1373,7 @@ def api_graph_blast_radius(scan_id: str, source: str, cap: int = 160):
 def api_graph_all_relations(scan_id: str, source: str, cap: int = 300):
     """Every relationship reachable from `source` across ALL edge types (membership,
     ownership, roles, app-roles, managed identities, Key Vault access, containment, PIM
-    eligibility, and derived abuse edges) - the node's full neighbourhood, direct relations
+    eligibility, and derived abuse edges), the node's full neighbourhood, direct relations
     first then everything transitively accessible. Opt-in (not a default view); `cap` bounds
     the rendered node set, nearest first."""
     ag = _attack_graph_for(scan_id)
@@ -1215,9 +1389,10 @@ def api_graph_edge(scan_id: str, id: str):
     if d is None:
         raise HTTPException(status_code=404, detail="Edge not found in this scan's graph.")
     scan = store.get_scan(scan_id) or {}
+    from . import report as _report
     src = d["source"]["id"]
     related = []
-    for f in (scan.get("findings") or []):
+    for f in _report.display_findings(scan):   # canonical view (consolidated SP groups)
         if any((e or {}).get("id") == src for e in (f.get("entities") or [])):
             related.append({"title": f.get("title"), "severity": f.get("severity"),
                             "rule_id": f.get("rule_id"), "key": store.finding_key(f)})
@@ -1323,7 +1498,7 @@ async def api_rules_catalog():
 @app.get("/api/scans/{scan_id}/rules")
 async def api_scan_rule_status(scan_id: str):
     """Per-rule outcome for one scan: fired (with count), not-assessed, or silent (assessed,
-    no finding) - so a user can verify each rule behaved as expected against real data."""
+    no finding), so a user can verify each rule behaved as expected against real data."""
     r = store.get_scan(scan_id)
     if not r:
         raise HTTPException(status_code=404, detail="Scan not found.")
@@ -1333,6 +1508,42 @@ async def api_scan_rule_status(scan_id: str):
     na = r.get("not_assessed") or []
     na_ids = sorted({x.get("rule_id") for x in na if isinstance(x, dict) and x.get("rule_id")})
     return JSONResponse({"fired": dict(fired), "not_assessed": na_ids})
+
+
+@app.get("/api/cis")
+def api_cis_catalog():
+    """The CIS Azure Foundations coverage matrix: every control, the rule(s) that cover it,
+    and the static coverage summary (which controls PostureHound can assess at all)."""
+    from . import cis
+    return JSONResponse({"summary": cis.summary(), "controls": cis.controls()})
+
+
+@app.get("/api/scans/{scan_id}/cis")
+def api_scan_cis(scan_id: str):
+    """Per-scan CIS posture: each control's pass / fail / not-assessed / no-coverage status
+    and a posture score over the assessed controls."""
+    from collections import Counter
+    from . import cis
+    r = store.get_scan(scan_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Scan not found.")
+    findings = r.get("findings") or []
+    fired = Counter(f.get("rule_id") for f in findings if f.get("rule_id"))
+    na = r.get("not_assessed") or []
+    na_ids = sorted({x.get("rule_id") for x in na if isinstance(x, dict) and x.get("rule_id")})
+    # Evidence maps so each control can be audited like a finding: the firing finding per rule,
+    # the not-assessed reason per rule, and rule titles/remediation for pass/clean rules.
+    findings_by_rule = {}
+    for f in findings:
+        rid = f.get("rule_id")
+        if rid and rid not in findings_by_rule:
+            findings_by_rule[rid] = f
+    na_by_rule = {x.get("rule_id"): x.get("reason") for x in na
+                  if isinstance(x, dict) and x.get("rule_id")}
+    rule_meta = {m["id"]: m for m in _rules_catalog()}
+    return JSONResponse(cis.coverage_for_scan(
+        dict(fired), na_ids, findings_by_rule=findings_by_rule,
+        na_by_rule=na_by_rule, rule_meta=rule_meta))
 
 
 @app.get("/api/integrations/ado")
@@ -1361,9 +1572,10 @@ async def api_ado_workitems(scan_id: str):
 @app.post("/api/scans/{scan_id}/findings/{finding_key}/workitem")
 async def api_ado_create_workitem(scan_id: str, finding_key: str,
                                   assignee: str = Form(""),
-                                  parent_epic: str = Form("")):
+                                  parent_epic: str = Form(""),
+                                  severity: str = Form("")):
     """Create ONE Azure DevOps work item for a specific finding (explicit, per-finding action)."""
-    from . import ado
+    from . import ado, report
     if not finding_key or len(finding_key) != 16 or not all(c in "0123456789abcdef" for c in finding_key):
         raise HTTPException(status_code=400, detail="Invalid finding_key format.")
     st = store.ado_status()
@@ -1383,18 +1595,54 @@ async def api_ado_create_workitem(scan_id: str, finding_key: str,
     finding = next((f for f in (scan.get("findings") or [])
                     if store.finding_key(f) == finding_key), None)
     if finding is None:
+        # Service-principal group findings live in their own list, not result["findings"].
+        finding = next((g for g in (scan.get("sp_groups") or [])
+                        if store.finding_key(g) == finding_key), None)
+    if finding is None:
         raise HTTPException(status_code=404, detail="Finding not found in this scan.")
+    # Match what the finding card shows: strip any heavy SP that has its own group card out of this
+    # individual finding, so the work item's affected objects / evidence / count agree with the UI
+    # (the renderers do the same strip client-side). Group findings are returned unchanged.
+    # `or finding`: a fully-grouped finding (every entity has its own group card) strips to None and
+    # is not shown individually, so its create button cannot normally fire; keep the original if it does.
+    finding = report.strip_grouped_sps(finding, report.heavy_sp_ids(scan)) or finding
     cfg = store.get_settings()
     try:
         wi = ado.create_work_item(cfg, store.get_ado_pat() or "", finding,
                                   assignee=assignee or cfg.get("ado_default_assignee", ""),
-                                  parent_epic=parent_epic or cfg.get("ado_default_parent_epic", ""))
+                                  parent_epic=parent_epic or cfg.get("ado_default_parent_epic", ""),
+                                  severity=(severity.strip() or finding.get("severity") or ""))
     except ado.AdoError as e:
         raise HTTPException(status_code=400, detail=str(e))
     import time as _t
     wi["created_at"] = int(_t.time())
     store.record_work_item(scan_id, finding_key, wi)
     return JSONResponse({"created": True, "workitem": wi})
+
+
+@app.delete("/api/scans/{scan_id}/findings/{finding_key}/workitem")
+async def api_ado_delete_workitem(scan_id: str, finding_key: str, destroy: bool = False):
+    """Delete the Azure DevOps work item for a finding and forget the local record, so the finding
+    can be re-raised. Soft-deletes to the ADO Recycle Bin by default (recoverable); ?destroy=true
+    removes it permanently. Always clears the local record (even if the remote is already gone)."""
+    from . import ado
+    if not finding_key or len(finding_key) != 16 or not all(c in "0123456789abcdef" for c in finding_key):
+        raise HTTPException(status_code=400, detail="Invalid finding_key format.")
+    existing = store.get_work_items(scan_id).get(finding_key)
+    if not existing:
+        raise HTTPException(status_code=404, detail="No work item recorded for this finding.")
+    st = store.ado_status()
+    deleted = {"id": existing.get("id"), "destroyed": destroy, "remote_deleted": False}
+    if st.get("configured") and existing.get("id") is not None:
+        try:
+            ado.delete_work_item(store.get_settings(), store.get_ado_pat() or "",
+                                 existing["id"], destroy=destroy)
+            deleted["remote_deleted"] = True
+        except ado.AdoError as e:
+            # Do not orphan the local record on a remote failure; surface it so the user can retry.
+            raise HTTPException(status_code=400, detail=str(e))
+    store.delete_work_item(scan_id, finding_key)   # forget it -> the Create button returns
+    return JSONResponse({"deleted": True, "workitem": deleted})
 
 
 @app.get("/api/graph/saved-queries")
@@ -1530,14 +1778,24 @@ def _with_statuses(result: dict, scan_id: str) -> dict:
         for f in findings
     ]
 
+    # Service-principal group findings are first-class: give each the same stable key + status so
+    # the grouped card supports remediation status and Azure DevOps work items like any finding.
+    groups = result.get("sp_groups")
+    if isinstance(groups, list):
+        result["sp_groups"] = [
+            {**g, "_finding_key": store.finding_key(g),
+             "status": statuses.get(store.finding_key(g), "New")}
+            for g in groups
+        ]
+
     # Enrich subscription GUID→name map from raw collection (authoritative display names).
-    # Always merge raw names in - they override GUID-only fallbacks from engine.py on new scans.
+    # Always merge raw names in, they override GUID-only fallbacks from engine.py on new scans.
     raw_sub_names = _load_subscription_names(scan_id)
     if raw_sub_names:
         existing = result.get("subscriptions") or {}
         result["subscriptions"] = {**existing, **raw_sub_names}
     elif "subscriptions" not in result:
-        # No raw collection and no engine-generated map - stub GUIDs from ARM-path entity IDs.
+        # No raw collection and no engine-generated map, stub GUIDs from ARM-path entity IDs.
         _guid_re = _re.compile(
             r"/subscriptions/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
             _re.I)
@@ -1575,7 +1833,7 @@ def _with_statuses(result: dict, scan_id: str) -> dict:
         result["_workitems"] = store.get_work_items(scan_id)
     except Exception:
         # Calibration is derived and best-effort, but a failure here silently drops quality
-        # tiers / validation / ADO data from the served result - log it rather than hide it.
+        # tiers / validation / ADO data from the served result, log it rather than hide it.
         _log.warning("serve-time calibration failed for scan %s", scan_id, exc_info=True)
 
     # Health banner is a DERIVED summary, not a snapshot: recompute it from the
@@ -1666,7 +1924,10 @@ async def api_roadmap(scan_id: str):
     if not r:
         raise HTTPException(status_code=404, detail="Scan not found.")
     statuses = store.get_finding_statuses(scan_id)
-    open_findings = [f for f in r.get("findings", [])
+    # Canonical display view (SP groups consolidated, grouped SPs stripped from individual findings)
+    # so the Action Plan matches the report, not the raw finding list.
+    from . import report as _report
+    open_findings = [f for f in _report.display_findings(r)
                      if f.get("source") != "path_consolidation"
                      and statuses.get(store.finding_key(f), "New") not in ("Resolved", "Risk Accepted")]
 
@@ -1705,6 +1966,9 @@ async def api_scan_report(scan_id: str):
         raise HTTPException(status_code=404, detail="Scan not found.")
     r = _with_statuses(r, scan_id)
     r["_scan_id"] = scan_id
+    # Current AI-leads confidence threshold (Settings), embedded so the report's gate matches
+    # the live dashboard without re-generating the scan.
+    r["_ai_lead_confidence"] = store.get_settings().get("ai_lead_confidence", 50)
     nonce = secrets.token_urlsafe(16)
     csp = (f"default-src 'self'; script-src 'nonce-{nonce}'; style-src 'self' 'unsafe-inline'; "
            "connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
@@ -1735,9 +1999,6 @@ async def api_settings_get():
     s = store.get_settings()
     s["api_key_set"] = store.has_api_key()
     s["api_key_source"] = store.api_key_source()  # "env", "settings", or None
-    # Non-secret auth status for the Account card (never the hash or JWT secret).
-    s["auth_username"] = store.get_auth_username()
-    s["auth_must_change"] = store.auth_must_change()
     return _safe_settings(s)
 
 
@@ -1760,10 +2021,17 @@ async def api_settings_set(ai_default: bool = Form(None),
                            ado_work_item_type: str | None = Form(None),
                            ado_tags: str | None = Form(None),
                            ado_default_assignee: str | None = Form(None),
-                           ado_default_parent_epic: str | None = Form(None)):
+                           ado_default_parent_epic: str | None = Form(None),
+                           ado_sla_field: str | None = Form(None),
+                           ai_lead_confidence: int | None = Form(None)):
     patch: dict = {}
     if ai_default is not None:
         patch["ai_default"] = ai_default
+    if ai_lead_confidence is not None:
+        if not (0 <= ai_lead_confidence <= 100):
+            raise HTTPException(status_code=400,
+                                detail="ai_lead_confidence must be between 0 and 100.")
+        patch["ai_lead_confidence"] = int(ai_lead_confidence)
     if min_severity:
         if min_severity not in ("Critical", "High", "Medium", "Low", "Info"):
             raise HTTPException(status_code=400,
@@ -1808,11 +2076,16 @@ async def api_settings_set(ai_default: bool = Form(None),
             raise HTTPException(status_code=400, detail="Azure DevOps org URL must be https://")
         patch["ado_org_url"] = u.rstrip("/")
     if ado_project is not None:
-        patch["ado_project"] = ado_project.strip()
+        # Store the human project name, decoding a value pasted percent-encoded from a browser URL
+        # (ADO project names cannot contain '%', so this is safe), so it never double-encodes later.
+        from urllib.parse import unquote as _unq
+        patch["ado_project"] = _unq(ado_project.strip())
     if ado_area_path is not None:
         patch["ado_area_path"] = ado_area_path.strip()
     if ado_work_item_type is not None and ado_work_item_type.strip():
         patch["ado_work_item_type"] = ado_work_item_type.strip()
+    if ado_sla_field is not None:
+        patch["ado_sla_field"] = ado_sla_field.strip()
     if ado_tags is not None:
         patch["ado_tags"] = ado_tags.strip()
     if ado_default_assignee is not None:
@@ -1914,7 +2187,7 @@ async def api_test_arg_connection(arg_tenant_id: str | None = Form(None),
 
 # Only identity PRINCIPALS anchor a finding's cross-scan identity. Resources (Key Vaults,
 # storage accounts, VMs, …) are deliberately excluded: a rule-based finding "resolves" only
-# when the rule stops firing, not when one resource in its affected list churns - and an
+# when the rule stops firing, not when one resource in its affected list churns, and an
 # ephemeral VM being replaced by an equivalent one, or one of 200 Key Vaults changing, is not
 # a resolution. Keying on principals keeps the diff sensitive to WHO is over-privileged while
 # ignoring which resources happen to be enumerated under a bulk finding.
@@ -1922,7 +2195,7 @@ _PRINCIPAL_COMPARE_KINDS = {"AZUser", "AZServicePrincipal", "AZGroup", "AZRole"}
 
 
 def _finding_compare_id(f: dict):
-    """A finding's identity for cross-scan comparison - deliberately independent of the AI's
+    """A finding's identity for cross-scan comparison, deliberately independent of the AI's
     wording (its title/category are re-generated every run) and of resource-level churn. A
     deterministic finding is identified by its rule plus the identity PRINCIPALS it is about
     (so a resource-config rule matches on the rule alone and persists across resource churn,
@@ -1945,9 +2218,14 @@ async def api_compare_scans(scan_id_a: str, scan_id_b: str):
     if not a or not b:
         raise HTTPException(status_code=404, detail="One or both scans not found.")
 
+    from . import report as _report
+
     def key_findings(res: dict) -> dict:
+        # Diff the canonical display view (SP groups consolidated, grouped SPs stripped from the
+        # individual findings), so the compare counts match the report and never reference a finding
+        # that is hidden on screen inside a group card.
         out = {}
-        for f in res.get("findings", []):
+        for f in _report.display_findings(res):
             out[_finding_compare_id(f)] = f
         return out
 
@@ -1984,7 +2262,10 @@ async def api_export_csv(scan_id: str):
             s = "'" + s
         return s
 
-    for f in r.get("findings", []):
+    # Use the canonical display view so the CSV agrees with the report/dashboard: SP-group rows
+    # included, and grouped SPs stripped from the individual findings (not listed twice).
+    from . import report as _report
+    for f in _report.display_findings(r):
         ents = "; ".join(e.get("name", "") for e in f.get("entities", []))
         w.writerow([_csv_safe(f.get("title")), _csv_safe(f.get("severity")),
                    _csv_safe(f.get("category")), _csv_safe(f.get("source", "")),
@@ -2034,7 +2315,7 @@ async def index():
     csp = (f"default-src 'self'; script-src 'nonce-{nonce}' 'self'; style-src 'self' 'unsafe-inline'; "
            "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'")
     # The app shell carries all inline CSS/JS, so a cached copy silently pins an
-    # old UI (stale graph styling, missing features). Never cache the shell - it's
+    # old UI (stale graph styling, missing features). Never cache the shell, it's
     # tiny and regenerated per request anyway.
     headers = {
         "Content-Security-Policy": csp,

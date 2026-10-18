@@ -53,7 +53,7 @@ def _requires_mfa(policy) -> bool:
 def _is_tenant_wide(policy) -> bool:
     """A policy only enforces its control TENANT-WIDE if it targets all users and all
     cloud apps. A policy scoped to one app or a handful of users must not be read as
-    tenant-wide protection - otherwise a narrow MFA policy silently suppresses the
+    tenant-wide protection, otherwise a narrow MFA policy silently suppresses the
     'MFA not enforced' finding."""
     cond = policy.get("conditions") or {}
     inc_users = [str(x).lower() for x in ((cond.get("users") or {}).get("includeUsers") or [])]
@@ -71,6 +71,24 @@ def _blocks_legacy(policy) -> bool:
     return blocks and bool(legacy & set(client_types)) and _is_tenant_wide(policy)
 
 
+def _user_consent_state(pol) -> "tuple[bool, list, str]":
+    """Classify the tenant's user-application-consent setting from authorizationPolicy.
+    Returns (restricted, permissionGrantPoliciesAssigned, human label). Restricted means ordinary
+    users either cannot consent at all, or only to low-impact permissions from verified publishers
+    (microsoft-user-default-low), the CIS 1.11 pass states. Anything else (the legacy 'consent to
+    all apps' policy, or a custom policy) is treated as unrestricted and surfaced for review."""
+    dur = (pol or {}).get("defaultUserRolePermissions") or {}
+    assigned = dur.get("permissionGrantPoliciesAssigned") or []
+    self_grants = [a for a in assigned if str(a).startswith("ManagePermissionGrantsForSelf.")]
+    if not self_grants:
+        return True, assigned, "users cannot consent to applications"
+    if all(a == "ManagePermissionGrantsForSelf.microsoft-user-default-low" for a in self_grants):
+        return True, assigned, "users may consent only to low-impact permissions from verified publishers"
+    if any(a == "ManagePermissionGrantsForSelf.microsoft-user-default-legacy" for a in self_grants):
+        return False, assigned, "users may consent to ALL applications (legacy, unrestricted)"
+    return False, assigned, "a custom user-consent policy is assigned, verify it is restrictive"
+
+
 def run_graph_rules(gr) -> tuple[list[dict], list[dict]]:
     findings: list[dict] = []
     not_assessed: list[dict] = []
@@ -86,11 +104,11 @@ def run_graph_rules(gr) -> tuple[list[dict], list[dict]]:
 
     # ---- IDG-001: MFA not enforced tenant-wide -----------------------------
     if ca_ok or sd_ok:
-        # Only a TENANT-WIDE MFA policy counts - one scoped to a single app or a few
+        # Only a TENANT-WIDE MFA policy counts, one scoped to a single app or a few
         # users does not mean MFA is enforced for everyone (and must not suppress this).
         mfa_policy = any(_requires_mfa(p) and _is_tenant_wide(p) for p in enabled) if ca_ok else False
         if sd_on or mfa_policy:
-            pass  # MFA is enforced by security defaults or a CA policy - good.
+            pass  # MFA is enforced by security defaults or a CA policy, good.
         elif ca_ok and sd_ok:
             findings.append(_finding(
                 "IDG-001", "Multi-factor authentication is not enforced tenant-wide", "High",
@@ -99,7 +117,7 @@ def run_graph_rules(gr) -> tuple[list[dict], list[dict]]:
                       note="no enabled Conditional Access policy requires MFA and security "
                            "defaults are off")],
                 "Neither security defaults nor any enabled Conditional Access policy requires "
-                "multi-factor authentication, so accounts - including administrators - can sign "
+                "multi-factor authentication, so accounts, including administrators, can sign "
                 "in with a password alone.",
                 "Enable a Conditional Access policy requiring MFA for all users (at minimum for "
                 "privileged roles), or enable security defaults for smaller tenants.",
@@ -172,7 +190,7 @@ def run_graph_rules(gr) -> tuple[list[dict], list[dict]]:
                 "IDG-003", "Conditional Access policies exist but are not enforced", "Low",
                 [_ent(p.get("id", "?"), p.get("displayName", p.get("id", "?")),
                       confirmed=True, state=p.get("state"),
-                      note=f"policy state is '{p.get('state')}' - not enforcing")
+                      note=f"policy state is '{p.get('state')}', not enforcing")
                  for p in inactive],
                 "One or more Conditional Access policies are disabled or in report-only mode, so "
                 "the protection they describe is not actually applied. Report-only is appropriate "
@@ -222,6 +240,50 @@ def run_graph_rules(gr) -> tuple[list[dict], list[dict]]:
                               "identitySecurityDefaultsEnforcementPolicy.isEnabled == false.",
                  "frameworks": {"CIS Azure": "1.1.x", "MITRE ATT&CK": "T1078", "Azure Threat Matrix": "AZT202"}}))
 
+    # ---- IDG-005: user consent to applications not restricted (CIS 1.11) -----
+    ap_ok = gr.collected.get("authorizationPolicy")
+    if ap_ok and gr.authorization_policy is not None:
+        restricted, assigned, label = _user_consent_state(gr.authorization_policy)
+        if not restricted:
+            findings.append(_finding(
+                "IDG-005", "User consent to applications is not restricted", "Medium",
+                [_ent("user_consent", "User application consent", confirmed=True,
+                      permissionGrantPoliciesAssigned=assigned, note=label)],
+                "Ordinary (non-admin) users can grant applications access to organisational data on "
+                "their own behalf: " + label + ". This is the illicit-consent / OAuth-phishing "
+                "surface, a user tricked into approving a malicious application hands it their "
+                "Microsoft Graph permissions with no admin review.",
+                "Restrict user consent to verified publishers and low-impact permissions "
+                "(microsoft-user-default-low), or disable user consent entirely and route all "
+                "application consent through an admin-consent request workflow.",
+                {"summary": "Users can consent to applications without admin review (" + label + ").",
+                 "why": "User consent lets any employee grant an app access to data in their context "
+                        "without an administrator ever seeing it. It is the primary vector for "
+                        "OAuth consent-phishing: the attacker never steals a password or trips MFA, "
+                        "the victim simply approves a convincing app.",
+                 "scenario": "An attacker sends an OAuth consent-phishing link for a malicious "
+                             "multi-tenant app requesting Mail.Read / Files.Read. A user approves "
+                             "it; the app now reads their mailbox and files via Graph with a "
+                             "long-lived token, no credential theft and no admin visibility.",
+                 "impact": "Illicit application consent: organisational data handed to "
+                           "attacker-controlled apps by ordinary users, invisible to admins.",
+                 "steps": ["Entra ID > Enterprise applications > Consent and permissions > User "
+                           "consent settings: choose 'Allow user consent for apps from verified "
+                           "publishers, for selected permissions' or disable user consent.",
+                           "Enable the admin-consent request workflow so users request and admins "
+                           "approve app access.",
+                           "Review existing user-consented grants (oauth2PermissionGrants) for "
+                           "anything unexpected."],
+                 "detection": "Microsoft Graph /policies/authorizationPolicy: "
+                              "defaultUserRolePermissions.permissionGrantPoliciesAssigned is empty "
+                              "or only 'microsoft-user-default-low' when restricted; a legacy or "
+                              "custom ManagePermissionGrantsForSelf policy means user consent is open.",
+                 "frameworks": {"CIS Azure": "1.11", "MITRE ATT&CK": "T1528", "Azure Threat Matrix": "AZT501"}}))
+    elif ap_ok is False:
+        not_assessed.append({"rule_id": "IDG-005", "title": "User consent to applications",
+                             "reason": "authorization policy not collected (grant the SP Policy.Read.All)",
+                             "needs": ["Microsoft Graph authorizationPolicy"]})
+
     return findings, not_assessed
 
 
@@ -246,7 +308,12 @@ GRAPH_RULES_CATALOG = [
      "frameworks": {"CIS Azure": "1.1.x", "Best Practice": "Control enforcement"}},
     {"id": "IDG-004", "title": "The tenant has no baseline identity protection",
      "severity": "High", "category": "Privileged Identity", "best_practice": False,
-     "description": "No Conditional Access policies exist and security defaults are off - the weakest possible identity posture.",
+     "description": "No Conditional Access policies exist and security defaults are off, the weakest possible identity posture.",
      "remediation": "Enable security defaults, or build a Conditional Access baseline requiring MFA and blocking legacy auth.",
      "frameworks": {"CIS Azure": "1.1.1", "MITRE ATT&CK": "T1078", "Azure Threat Matrix": "AZT202"}},
+    {"id": "IDG-005", "title": "User consent to applications is not restricted",
+     "severity": "Medium", "category": "Applications & Service Principals", "best_practice": False,
+     "description": "Ordinary users can grant applications access to organisational data without admin review, the illicit-consent / OAuth consent-phishing surface.",
+     "remediation": "Restrict user consent to verified publishers and low-impact permissions, or disable it and use an admin-consent request workflow.",
+     "frameworks": {"CIS Azure": "1.11", "MITRE ATT&CK": "T1528", "Azure Threat Matrix": "AZT501"}},
 ]

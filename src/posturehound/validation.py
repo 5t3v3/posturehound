@@ -3,9 +3,9 @@
 The findings pipeline is high-precision but its quality was, until now, only *claimed*.
 This module makes quality measurable and honest:
 
-  • calibrate()        - assign every finding an evidence-based quality tier and an
+  • calibrate()       , assign every finding an evidence-based quality tier and an
                          effective confidence.
-  • recall_proxy()     - a differential-coverage signal: tier-0-reaching principals no
+  • recall_proxy()    , a differential-coverage signal: tier-0-reaching principals no
                          analytical finding explains, surfaced as possible blind spots.
   • stratified_sample()- a representative, deterministic sample to hand an analyst.
   • precision_metrics()- from analyst labels, precision overall and per tier/source,
@@ -24,12 +24,12 @@ from . import store
 
 # Evidence tiers, strongest first. A finding's tier is derived from HOW it can be
 # trusted, not from its severity:
-#   verified_fact - a configuration fact read straight from Azure (e.g. "storage
+#   verified_fact, a configuration fact read straight from Azure (e.g. "storage
 #                   account has shared-key enabled"). No identity attack path; the
 #                   deterministic rule IS the proof.
-#   corroborated  - an identity attack path independently corroborated by graph analysis.
-#   supported     - grounded and plausible, with partial or single-engine support.
-#   lead          - a low-confidence, uncorroborated AI hypothesis for an analyst to run down.
+#   corroborated , an identity attack path independently corroborated by graph analysis.
+#   supported    , grounded and plausible, with partial or single-engine support.
+#   lead         , a low-confidence, uncorroborated AI hypothesis for an analyst to run down.
 QUALITY_TIERS = ("verified_fact", "corroborated", "supported", "lead")
 
 
@@ -44,7 +44,7 @@ def classify(f: dict) -> tuple[str, int, bool]:
     conf = conf if isinstance(conf, int) else None
     has_path = _has_path(f)
 
-    # A deterministic config finding with no attack path is a direct observation - the
+    # A deterministic config finding with no attack path is a direct observation, the
     # highest-trust category.
     if src == "deterministic" and not has_path:
         return "verified_fact", 95, False
@@ -65,7 +65,7 @@ def calibrate(findings: list[dict]) -> dict:
     of whatever the pipeline stored."""
     counts: collections.Counter = collections.Counter()
     for f in findings:
-        # Path-consolidation roll-ups are the attack-path view, not report findings - every
+        # Path-consolidation roll-ups are the attack-path view, not report findings, every
         # other function here excludes them, so the tier counts must too, or quality_tiers
         # sums to the raw array (401) and contradicts the 118-finding report it describes.
         if f.get("source") == "path_consolidation":
@@ -84,7 +84,7 @@ def recall_proxy(result: dict) -> dict:
     Without a labelled ground-truth tenant, recall cannot be measured directly. This is an
     honest PROXY: every principal that reaches a Tier-0 asset in the computed attack map,
     for which NO analytical finding (rule or AI, excluding the auto-generated path roll-ups)
-    names that principal, is a candidate blind spot - the escalation is real but nothing
+    names that principal, is a candidate blind spot, the escalation is real but nothing
     explains the misconfiguration behind it. It over-counts (the enabling issue may be filed
     against a group the principal belongs to), so it is a lead list, not a defect count."""
     findings = result.get("findings") or []
@@ -101,7 +101,7 @@ def recall_proxy(result: dict) -> dict:
     traversal = {"MemberOf", "Owns"}
     unexplained: dict[str, str] = {}
     for p in tier0_paths:
-        # Look at the ABUSE steps on the path - the hops where a principal exercises a
+        # Look at the ABUSE steps on the path, the hops where a principal exercises a
         # privilege (everything except plain MemberOf/Owns traversal). The escalation is
         # "explained" only if a finding actually names the principal doing the abusing; a
         # tenant-wide "any node appears somewhere" test is trivially always true and would
@@ -121,7 +121,7 @@ def recall_proxy(result: dict) -> dict:
         "unexplained_entry_count": len(unexplained),
         "unexplained_samples": list(unexplained.values())[:10],
         "note": "Proxy, not a measured recall. A tier-0 path is a candidate blind spot when "
-                "NO finding names the principal exercising a privilege on it - the abused "
+                "NO finding names the principal exercising a privilege on it, the abused "
                 "privilege was never flagged. Pure group-membership chains are excluded.",
     }
 
@@ -186,7 +186,7 @@ def _segment(items: list[tuple[str, dict]]) -> dict:
 
 
 def precision_metrics(findings: list[dict], labels: dict) -> dict:
-    """Measured precision from analyst labels - overall and per quality tier / source,
+    """Measured precision from analyst labels, overall and per quality tier / source,
     each with a 95% Wilson interval. 'unsure' labels are counted but excluded from
     precision. Labels for findings not in this scan are ignored."""
     by_key = {store.finding_key(f): f for f in findings

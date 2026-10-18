@@ -25,11 +25,11 @@ class PdfEngineUnavailable(RuntimeError):
 
 # --------------------------------------------------------------------------- sanitising
 # This report leaves the building. Scrub every trace of the tooling that made it
-# - a graph-tool name in a finding title is a support question for a team that
+#, a graph-tool name in a finding title is a support question for a team that
 # has no access to it.
 _SANI = [
     (r"PostureHound", "this assessment"),
-    # No URLs in an externally-shared report - a link back to a tool the reader
+    # No URLs in an externally-shared report, a link back to a tool the reader
     # cannot reach is noise. Real findings carry none; this guards AI-emitted ones.
     (r"https?://\S+", "the vendor documentation"),
 ]
@@ -106,7 +106,7 @@ def _describe(f):
 
 
 # Per-entity evidence: the deterministic rules and AI analysts attach WHY each
-# object is in the finding - the role it holds, the group it inherits it through,
+# object is in the finding, the role it holds, the group it inherits it through,
 # the permission, the scope. The report used to drop all of it and show a generic
 # "Affected user", which is why a group-membership finding never named the group.
 # These render that evidence compactly.
@@ -227,7 +227,7 @@ def _entity_rows(f):
                 f'<th>Role &amp; how it is held</th></tr></thead><tbody>{rows}</tbody></table>')
 
     # Compact: group names by (type, shared detail) so a shared role/group becomes
-    # the heading - e.g. all members inheriting a role through the same group.
+    # the heading, e.g. all members inheriting a role through the same group.
     from collections import OrderedDict
     groups: "OrderedDict[tuple, list]" = OrderedDict()
     for e in ents:
@@ -278,8 +278,8 @@ def _attack_path(f):
 
 def _max_impact_block(f):
     """The finding's worst-case outcome: the maximum-impact path through the
-    escalation graph. Rendered as a plain business artifact - the objective reached
-    and the route to it - with no tooling references (this is the shareable report)."""
+    escalation graph. Rendered as a plain business artifact, the objective reached
+    and the route to it, with no tooling references (this is the shareable report)."""
     p = f.get("max_impact_path")
     if not p:
         return ""
@@ -289,7 +289,7 @@ def _max_impact_block(f):
     line = _esc(summ) if summ else (
         f"Worst case: compromise of {_esc(entry)} leads to {_esc(target)}.")
     if p.get("reaches_tier0"):
-        line += ' <span class="mi-t0">This path reaches a tier-0 objective - full tenant takeover.</span>'
+        line += ' <span class="mi-t0">This path reaches a tier-0 objective, full tenant takeover.</span>'
     diagram = ""
     hops = p.get("hops") or []
     # Draw the route only when the finding has no escalation-chain diagram already,
@@ -392,7 +392,10 @@ def _hardening_block(f):
 # --------------------------------------------------------------------------- document
 def render_html(scan: dict) -> str:
     """Render a scan dict into a self-contained external report (HTML string)."""
-    non_path = [f for f in scan.get("findings", []) if f.get("source") != "path_consolidation"]
+    # Canonical display view (SP-group findings consolidated, grouped SPs stripped from the
+    # individual findings) so the shareable report agrees with the interactive report/dashboard.
+    from . import report as _report
+    non_path = [f for f in _report.display_findings(scan) if f.get("source") != "path_consolidation"]
     security = [f for f in non_path if not f.get("best_practice")]
     hardening = [f for f in non_path if f.get("best_practice")]
 
@@ -481,7 +484,7 @@ def render_html(scan: dict) -> str:
 
 def _attackmap_section(scan: dict) -> str:
     """Tenant attack map for the shareable report: every attack's worst-case path,
-    ranked by impact. No tooling references - this is the route an attacker takes, in
+    ranked by impact. No tooling references, this is the route an attacker takes, in
     plain terms, for a team with no access to the analysis tool."""
     am = (scan.get("attack_map") or {})
     paths = am.get("paths") or []
@@ -517,7 +520,7 @@ def _attackmap_section(scan: dict) -> str:
 def _crosssub_block(scan: dict) -> str:
     """Cross-subscription bridges, rendered INSIDE the attack map (not as a separate
     section/menu): the principals whose compromise spans more than one subscription, and
-    the connections they create. Returns inner HTML only - empty when there are no bridges."""
+    the connections they create. Returns inner HTML only, empty when there are no bridges."""
     cs = ((scan.get("analytics") or {}).get("cross_subscription")) or {}
     bridges = cs.get("bridges") or []
     if not bridges:
@@ -548,8 +551,8 @@ def _crosssub_block(scan: dict) -> str:
     return f"""
   <h3 class="am-subhead" style="margin-top:7mm">Cross-subscription blast radius</h3>
   <p class="section-intro">Some of these attacks do not stop at one subscription. A principal whose access
-    spans more than one - held directly, granted by a management-group role, or inherited through a group
-    it belongs to, an account it owns, or an escalation path - is a bridge: compromising it extends the
+    spans more than one, held directly, granted by a management-group role, or inherited through a group
+    it belongs to, an account it owns, or an escalation path, is a bridge: compromising it extends the
     blast radius across every subscription it touches. {cs.get('bridge_count', len(bridges))} bridging
     principal(s) across {cs.get('subscription_count', 0)} subscription(s); {t0} reach a tier-0 target.</p>
   <div class="f-lab">Bridging principals (top {min(len(bridges), 25)} of {len(bridges)})</div>
@@ -634,7 +637,7 @@ _TEMPLATE = """<!doctype html>
 </body></html>"""
 
 
-_CSS = r"""/* ===== Azure Identity Posture Assessment - print stylesheet (weasyprint) ===== */
+_CSS = r"""/* ===== Azure Identity Posture Assessment, print stylesheet (weasyprint) ===== */
 
 :root{
   --ink:#141a26; --head:#0d1320; --muted:#6a7686; --faint:#9aa4b2;
@@ -833,7 +836,7 @@ a{color:inherit; text-decoration:none}
 .chip-medium{background:var(--med)} .chip-low{background:var(--low)}
 .chip-info{background:#6a7686}
 
-/* attack-path diagram (vertical kill-chain) - block layout; weasyprint balloons
+/* attack-path diagram (vertical kill-chain), block layout; weasyprint balloons
    flex-item heights, so nodes are plain blocks with an absolutely-placed badge. */
 .pathdiag{margin-top:2mm; break-inside:avoid}
 .pnode{position:relative; width:118mm; max-width:100%;

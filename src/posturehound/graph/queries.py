@@ -21,7 +21,7 @@ from .schema import GraphEdge, GraphNode, GraphSnapshot
 # ~60k-edge graph. A query that would exceed this is truncated and flagged.
 DEFAULT_NODE_CAP = 600
 
-# Edge types the attack graph traverses for path-finding - kept identical to scoring's
+# Edge types the attack graph traverses for path-finding, kept identical to scoring's
 # _ESCALATION_EDGES so the explorer's paths match the findings exactly. Crucially this
 # includes MemberOf/Owns (positioning), without which membership-into-a-Tier-0-group paths
 # were missing and everything looked like a 1-2 hop graph.
@@ -35,7 +35,7 @@ _POSITIONING_TYPES = {"MemberOf": 0.5, "Owns": 0.5}   # traversed to get into po
 _TRAVERSABLE_TYPES = _ABUSE_TYPES | set(_POSITIONING_TYPES)
 
 # Edge types that mean "source HOLDS / can exercise target" (principal -> role/group/target).
-# A role node is a sink - nothing escalates out of it - so the blast radius of a role is what
+# A role node is a sink, nothing escalates out of it, so the blast radius of a role is what
 # its holders can do: the reach you inherit by obtaining the role.
 _HOLDING_TYPES = {"EffectiveRole", "HasEntraRole", "EligibleForRole",
                   "HasRBACRole", "HasAppRole", "MemberOf", "Owns"}
@@ -64,7 +64,7 @@ PRESETS = [
     {"name": "disabled-to-tier0", "label": "Disabled accounts → Tier-0",
      "desc": "Disabled accounts that still hold a path to Tier-0."},
     {"name": "stale-privileged", "label": "Stale privileged (disabled Tier-0)",
-     "desc": "Disabled accounts that are themselves Tier-0 - dormant but dangerous."},
+     "desc": "Disabled accounts that are themselves Tier-0, dormant but dangerous."},
     {"name": "app-consent", "label": "Dangerous app permissions",
      "desc": "App permission grants that lead to role escalation (CanGrantRole / CanGrantAppRole)."},
     {"name": "mi-abuse", "label": "Managed-identity abuse",
@@ -105,8 +105,23 @@ class Subgraph:
     edges: list[GraphEdge] = field(default_factory=list)
     path_edge_keys: set[str] = field(default_factory=set)   # edges to highlight
     paths: list[list[str]] = field(default_factory=list)    # ordered node-id hop lists
+    # The nodes that ARE the answer to the query (the acting principals / matched assets),
+    # in a sensible order, drives the result list shown beside the graph. Distinct from the
+    # full node_ids, which also carries path intermediates and Tier-0 targets.
+    subjects: list[str] = field(default_factory=list)
     truncated: bool = False
     message: str = ""
+
+
+def _uniq(seq) -> list[str]:
+    """Distinct values, preserving first-seen order."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for x in seq:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
 
 
 class AttackGraph:
@@ -118,7 +133,7 @@ class AttackGraph:
         self._edge_by_key: dict[str, GraphEdge] = {e.key: e for e in snap.edges}
         self._out: dict[str, list[GraphEdge]] = {}
         self._in: dict[str, list[GraphEdge]] = {}
-        # Fold the overlay (custom Tier-0, and - next wave - remediated edges/nodes) in.
+        # Fold the overlay (custom Tier-0, and, next wave, remediated edges/nodes) in.
         t0extra = set(extra_tier0 or ())
         rem_edges: set[str] = set()
         rem_nodes: set[str] = set()
@@ -169,7 +184,7 @@ class AttackGraph:
     def meta(self) -> dict:
         m = self.snap.counts()
         m["tier0"] = len(self.tier0_ids)   # reflect custom Tier-0, not just the baked-in flags
-        # Distinct relationship types the path engine can traverse - powers the explorer's
+        # Distinct relationship types the path engine can traverse, powers the explorer's
         # optional "Via" filter so a user can constrain a path to specific primitives.
         m["edge_types"] = sorted({
             (data["edge"].type.value if hasattr(data["edge"].type, "value")
@@ -256,7 +271,7 @@ class AttackGraph:
                 sg.message = ("This is a Tier-0 asset with no outbound escalation edges." if is_t0
                               else "This node has no outbound escalation edges.")
             return sg
-        # Rank Tier-0 targets by distance - hop count, or (mode='easiest') summed edge weight
+        # Rank Tier-0 targets by distance, hop count, or (mode='easiest') summed edge weight
         # so the most *likely* route wins over the merely shortest. No hop limit. A Tier-0 node
         # shows onward paths to OTHER Tier-0 assets (lateral movement), excluding itself.
         lengths = self._lengths(source, mode, graph=graph)
@@ -309,13 +324,13 @@ class AttackGraph:
 
     def blast_radius(self, source: str, cap: int = DEFAULT_NODE_CAP) -> Subgraph:
         """Everything `source` can reach downstream: the forward shortest-path tree over the
-        attack graph - the damage that follows if this identity is compromised. Reachable nodes
+        attack graph, the damage that follows if this identity is compromised. Reachable nodes
         are ranked by impact (Tier-0 first, then onward reach / centrality), so when the view is
         capped the most damaging targets are always the ones kept.
 
         A role (or any node with no outbound escalation edges) is a sink: nothing escalates *out*
-        of it. For such a node the blast radius is instead what its HOLDERS can do - the reach you
-        inherit by obtaining the role - so a Tier-0 role still shows 'what else can be done'."""
+        of it. For such a node the blast radius is instead what its HOLDERS can do, the reach you
+        inherit by obtaining the role, so a Tier-0 role still shows 'what else can be done'."""
         sg = Subgraph()
         if not self.has(source):
             sg.message = "Node not found in this scan's graph."
@@ -325,7 +340,7 @@ class AttackGraph:
             if holders:
                 return self._blast_from_holders(source, holders, cap)
             sg.node_ids.add(source)
-            sg.message = "This node has no outbound escalation edges and no holders - nothing downstream."
+            sg.message = "This node has no outbound escalation edges and no holders, nothing downstream."
             return sg
         paths = nx.single_source_shortest_path(self.attack, source)   # node -> shortest path
         reachable = [n for n in paths if n != source]
@@ -355,7 +370,7 @@ class AttackGraph:
         return sg
 
     def all_relationships(self, source: str, cap: int = DEFAULT_NODE_CAP) -> Subgraph:
-        """The node's DIRECT relationships over EVERY relationship type - not just the
+        """The node's DIRECT relationships over EVERY relationship type, not just the
         escalation edges the attack views use, but membership, ownership, role/app-role
         holdings, managed identities, Key Vault access, containment, PIM eligibility, and
         the derived abuse edges too. Exactly one hop: the source node plus every node it is
@@ -369,15 +384,15 @@ class AttackGraph:
             return sg
         sg.node_ids.add(source)
         # One hop only: every edge leaving the source, over the full outgoing adjacency
-        # (all edge types). Derived (abuse) edges first, then by key, so the cap - if ever
-        # hit - drops the least-interesting direct edges rather than the abuse ones.
+        # (all edge types). Derived (abuse) edges first, then by key, so the cap, if ever
+        # hit, drops the least-interesting direct edges rather than the abuse ones.
         direct_edges = sorted(self._out.get(source, []),
                               key=lambda x: (not x.derived, x.key))
         total_direct = len(direct_edges)
         kept: list[GraphEdge] = []
         for e in direct_edges:
             if e.target not in sg.node_ids and len(sg.node_ids) >= cap:
-                continue                    # neighbour would exceed the cap - skip its edge
+                continue                    # neighbour would exceed the cap, skip its edge
             sg.node_ids.add(e.target)
             kept.append(e)
         sg.edges = sorted(kept, key=lambda e: e.key)
@@ -393,7 +408,7 @@ class AttackGraph:
         holds it. Shows who holds it (holding edges into the node) plus what those holders can do."""
         sg = Subgraph()
         sg.node_ids.add(node_id)
-        # Who holds it - draw the holding edges so the panel reads "N principals hold X".
+        # Who holds it, draw the holding edges so the panel reads "N principals hold X".
         for e in self._in.get(node_id, []):
             if e.type in _HOLDING_TYPES and e.source in set(holders):
                 sg.edges.append(e)
@@ -466,7 +481,7 @@ class AttackGraph:
     def reachable_from(self, source: str, via=None, cap: int = DEFAULT_NODE_CAP) -> Subgraph:
         """Everything reachable FROM `source` over the escalation graph, to ANY node (not only
         Tier-0), as a forward shortest-path DAG. With `via` it is restricted to the selected
-        relationship types - the 'From → everything, via these primitives' objective, the
+        relationship types, the 'From → everything, via these primitives' objective, the
         counterpart to paths_to_tier0's 'From → Tier-0'."""
         from collections import deque
         sg = Subgraph()
@@ -521,7 +536,7 @@ class AttackGraph:
         """Shared engine for every 'reach Tier-0' preset. Reverse multi-source BFS from the
         objective set (`targets`, defaulting to all Tier-0 nodes) gives each node its
         hop-distance to an objective; then, for each source (all of them, or only those
-        matching `match`), it expands the FULL shortest-path DAG toward the objective - every
+        matching `match`), it expands the FULL shortest-path DAG toward the objective, every
         edge (u,v) with dist[v]==dist[u]-1, branching on ties. This is the fix that makes a
         source which reaches several objectives at the same distance show ALL of those edges,
         not the single one a succ-pointer happened to keep. Returns the subgraph and the number
@@ -562,7 +577,7 @@ class AttackGraph:
             while stack:
                 u = stack.pop()
                 if dist.get(u, 0) == 0:
-                    continue                     # Tier-0 target reached - sink
+                    continue                     # Tier-0 target reached, sink
                 if len(sg.node_ids) >= cap:
                     sg.truncated = True
                     break
@@ -593,8 +608,9 @@ class AttackGraph:
         per node)."""
         sg, matched = self._shortest_dag(None, cap=cap)
         if sg.node_ids or matched:
-            sg.message = (f"{matched} source(s) can escalate to Tier-0 - showing every "
+            sg.message = (f"{matched} source(s) can escalate to Tier-0, showing every "
                           f"shortest attack path." + (" (truncated)" if sg.truncated else ""))
+        sg.subjects = _uniq(p[0] for p in sg.paths if p)   # the escalation sources
         return sg
 
     def _tier0_reasons(self, node_id: str) -> list[dict]:
@@ -649,7 +665,7 @@ class AttackGraph:
         reaches_count = 0
         nearest = None
         if node_id in self.attack:
-            # Count Tier-0 reachable from here, EXCLUDING the node itself - so a Tier-0 node
+            # Count Tier-0 reachable from here, EXCLUDING the node itself, so a Tier-0 node
             # correctly reports its onward reach to *other* Tier-0 assets instead of a flat 0.
             lengths = nx.single_source_shortest_path_length(self.attack, node_id)
             t0 = [lengths[t] for t in self.tier0_ids if t in lengths and t != node_id]
@@ -724,7 +740,7 @@ class AttackGraph:
         # _shortest_dag treats every Tier-0 node as a sink (distance 0), so a MATCHING account
         # that already holds Tier-0 AND can pivot to OTHER Tier-0 assets is dropped as a source
         # (e.g. a disabled Owner that can add credentials to Tier-0 SPs). Add those back with
-        # their shortest path to the nearest OTHER Tier-0 - the most severe case, not the least.
+        # their shortest path to the nearest OTHER Tier-0, the most severe case, not the least.
         added = False
         for nid in self.tier0_ids:
             if nid in sg.node_ids or nid not in self.attack:
@@ -752,10 +768,11 @@ class AttackGraph:
             sg.edges = sorted(seen.values(), key=lambda e: e.key)
         if matched or not sg.message:
             sg.message = f"{matched} {label} can reach Tier-0."
+        sg.subjects = _uniq(p[0] for p in sg.paths if p)   # the principals that reach Tier-0
         return sg
 
     def paths_to(self, target: str, cap: int = DEFAULT_NODE_CAP) -> Subgraph:
-        """Every principal that can reach `target`, with all tied shortest routes to it - the
+        """Every principal that can reach `target`, with all tied shortest routes to it, the
         reverse of paths_to_tier0 for an arbitrary node chosen as the sole objective. Used by
         the explorer when only a 'To' is set (no 'From'): show everything that leads to it."""
         sg = Subgraph()
@@ -770,11 +787,12 @@ class AttackGraph:
             sg.message = f"{matched} principal(s) can reach {name}."
         elif not sg.message:
             sg.message = f"Nothing can reach {name}."
+        sg.subjects = _uniq(p[0] for p in sg.paths if p and p[0] != target)
         return sg
 
     def _edges_by_type(self, types: set[str], label: str,
                        cap: int = 500, edge_cap: int = 900) -> Subgraph:
-        # Bound BOTH nodes and edges - some relations (storage-key / managed-identity access)
+        # Bound BOTH nodes and edges, some relations (storage-key / managed-identity access)
         # are near-complete many-to-many and produce thousands of edges, an unreadable hairball.
         # Order edges so the most consequential survive the cap: those landing on a Tier-0
         # target first, then ones whose source can itself reach Tier-0, then the rest.
@@ -795,6 +813,7 @@ class AttackGraph:
             sg.node_ids.add(e.target)
         shown = f"showing {len(sg.edges)} of {total}" if sg.truncated else f"{len(sg.edges)}"
         sg.message = f"{shown} {label}." + (" (view capped)" if sg.truncated else "")
+        sg.subjects = _uniq(e.source for e in sg.edges)   # the acting principals
         return sg
 
     def _highlight_nodes(self, predicate, label: str, cap: int = DEFAULT_NODE_CAP) -> Subgraph:
@@ -824,6 +843,7 @@ class AttackGraph:
             seen.setdefault(e.key, e)
         sg.edges = sorted(seen.values(), key=lambda e: e.key)
         sg.message = f"{len(matched)} {label}." + (" (truncated)" if sg.truncated else "")
+        sg.subjects = [nid for nid in matched if nid in sg.node_ids]   # the matched assets
         return sg
 
     @staticmethod
@@ -915,11 +935,12 @@ class AttackGraph:
             edges.append({"data": {
                 "id": e.key, "source": e.source, "target": e.target,
                 # Always a string (never null) so the Cytoscape label mapping has a data field to
-                # bind to - a null here floods the console with "no mapping for property label".
+                # bind to, a null here floods the console with "no mapping for property label".
                 "type": e.type, "primitive": e.primitive or "", "derived": e.derived,
                 "count": e.count, "onPath": e.key in sg.path_edge_keys,
             }})
         return {
             "nodes": nodes, "edges": edges,
-            "paths": sg.paths, "truncated": sg.truncated, "message": sg.message,
+            "paths": sg.paths, "subjects": sg.subjects,
+            "truncated": sg.truncated, "message": sg.message,
         }

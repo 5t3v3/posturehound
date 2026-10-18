@@ -1,4 +1,4 @@
-"""Edge-derivation engine - derives abusable attack-path edges.
+"""Edge-derivation engine, derives abusable attack-path edges.
 
 AzureHound does not ship abusable edges; they are derived from raw role
 assignments, app-role grants, ownerships, group membership and KV policies.
@@ -91,7 +91,7 @@ def _emit_effective_role(g: Graph, principal_id: str, role_id: str, chain: list[
 
 def _tag_tier0(g: Graph, extra_tier0: "set[str] | None" = None) -> None:
     # User-selected Tier-0 assets (chosen in the pre-assessment selection step) are treated
-    # as Tier-0 crown jewels for THIS scan - tagged first so every downstream derivation,
+    # as Tier-0 crown jewels for THIS scan, tagged first so every downstream derivation,
     # rule, score and path sees them exactly like an auto-detected Tier-0 node.
     if extra_tier0:
         for nid in extra_tier0:
@@ -102,7 +102,7 @@ def _tag_tier0(g: Graph, extra_tier0: "set[str] | None" = None) -> None:
     # Tag the Tier-0 ROLE nodes themselves, not just their holders. facts.py sorts
     # escalation_edges by whether the destination is tier0-tagged; because role nodes
     # were never tagged, every CanGrantRole edge ("this SP can assign itself Global
-    # Administrator" - the most severe primitive in the graph) sorted last and was
+    # Administrator", the most severe primitive in the graph) sorted last and was
     # evicted by the 5,000-edge cap before reaching the privilege-escalation specialist.
     for r in g.nodes_of_kind(NodeKind.ROLE):
         if _is_tier0_role(r):
@@ -119,7 +119,7 @@ def _tag_tier0(g: Graph, extra_tier0: "set[str] | None" = None) -> None:
                     p.tags.add("tier0_critical")
     # Subscription / MG Owner & UAA holders are also Tier-0 for the resource plane.
     # Use is_at_broad_scope so resource-level (VM, KV, RG) assignments do not
-    # false-positive here - only exact subscription or MG scope is broad enough.
+    # false-positive here, only exact subscription or MG scope is broad enough.
     for p in _principals(g):
         for e in g.out_edges(p.id, EdgeType.HAS_RBAC_ROLE):
             role = (e.evidence.get("role") or "").lower()
@@ -161,7 +161,7 @@ def _derive_ownership_escalation(g: Graph) -> None:
         if target.kind in (NodeKind.APP, NodeKind.SERVICE_PRINCIPAL):
             # You cannot add usable credentials to a managed identity, nor
             # authenticate as a service principal whose app registration lives in
-            # another tenant - skip these to avoid the classic false positive.
+            # another tenant, skip these to avoid the classic false positive.
             if target.tags & {"managed_identity", "foreign_tenant"}:
                 continue
             g.add_edge(Edge(src=e.src, dst=e.dst, type=EdgeType.CAN_ADD_SECRET,
@@ -202,7 +202,7 @@ def _derive_app_role_escalation(g: Graph) -> None:
 
     for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
         # Read GRANTED roles only. Reading `appRoles` (what the app publishes) made every
-        # Microsoft resource-server SP look omnipotent - Microsoft Graph alone generated
+        # Microsoft resource-server SP look omnipotent, Microsoft Graph alone generated
         # 138 fabricated escalation edges including "CanGrantRole → Global Administrator".
         for ar in sp.props.get("_granted_app_roles", []) or []:
             value = ar.get("value")
@@ -366,7 +366,7 @@ def _extract_sub(rid: str) -> str:
 
 def _mg_descendant_subs(g: Graph, mg_scope: str) -> set:
     """Subscriptions beneath a management group, via the CONTAINS hierarchy
-    (MG -> nested MG -> subscription). Memoised on the graph - this is called once
+    (MG -> nested MG -> subscription). Memoised on the graph, this is called once
     per (assignment, resource) pair across the resource-plane derivations."""
     from collections import deque
     key = mg_scope.lower()
@@ -402,10 +402,10 @@ def _scope_covers(scope: str, resource, g: "Graph | None" = None) -> bool:
     """Does an RBAC assignment at `scope` reach this resource?
 
     Handles the full ARM hierarchy: tenant root, management group (walking CONTAINS
-    down to the resource's subscription - an MG Owner reaches every descendant
+    down to the resource's subscription, an MG Owner reaches every descendant
     subscription's resources), subscription, resource group, and the resource itself.
     Previously it only string-prefix-matched, so every management-group-scoped role
-    covered ZERO resources - the single biggest missed-path class."""
+    covered ZERO resources, the single biggest missed-path class."""
     if not scope or not resource:
         return False
     scope = scope.lower()
@@ -441,11 +441,11 @@ def _denied(g: Graph, principal_id: str, scope: str) -> bool:
 
 def _derive_app_admin_escalation(g: Graph) -> None:
     """Application / Cloud Application Administrator can add credentials to ANY
-    application or service principal - escalating to the most-privileged SP.
+    application or service principal, escalating to the most-privileged SP.
 
     Excludes managed identities (you cannot manage their credentials) and
     foreign-tenant service principals (you cannot authenticate as an SP whose app
-    registration lives in another tenant) - both are classic false positives.
+    registration lives in another tenant), both are classic false positives.
     """
     priv_sps = [sp for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL)
                 if (sp.tags & {"tier0", "privileged", "dangerous_app_role", "can_reach_tier0"})
@@ -458,7 +458,7 @@ def _derive_app_admin_escalation(g: Graph) -> None:
         role = _effective_role_named(g, p.id, C.APP_MANAGEMENT_ROLES)
         # NOTE: do NOT gate this on `"tier0" not in p.tags`. Both APP_MANAGEMENT_ROLES
         # are themselves Tier-0 templates, so _tag_tier0 has already tagged every holder
-        # `tier0` by the time this runs - that guard was always false and this entire
+        # `tier0` by the time this runs, that guard was always false and this entire
         # primitive never fired. The escalation is real regardless of the holder's own
         # tier: what matters is that they can mint credentials on a privileged SP.
         if role:
@@ -475,7 +475,7 @@ def _derive_app_admin_escalation(g: Graph) -> None:
 
 def _derive_password_reset_escalation(g: Graph) -> None:
     """Password-reset-capable roles; Privileged Authentication Administrator can
-    reset a Global Administrator's password - a direct Tier-0 takeover path."""
+    reset a Global Administrator's password, a direct Tier-0 takeover path."""
     tier0_users = [n for n in g.nodes() if "tier0" in n.tags and n.kind == NodeKind.USER]
     for p in _principals(g):
         emitted_reset: set[str] = set()  # dedup: one CAN_RESET_PASSWORD edge per (src, dst)
@@ -491,12 +491,12 @@ def _derive_password_reset_escalation(g: Graph) -> None:
             # template, so `"tier0" not in p.tags` was always false and this primitive
             # never fired. Privileged Authentication Administrator resetting a Global
             # Admin's password is a real takeover path whether or not the holder is
-            # already Tier-0 - the edge is what makes the path visible.
+            # already Tier-0, the edge is what makes the path visible.
             if rn in C.RESET_PASSWORD_TIER0_ROLES:
                 p.tags.add("can_reach_tier0")
                 for t in tier0_users:
                     if t.id in emitted_reset or t.id == p.id:
-                        continue  # skip self - resetting your own password isn't escalation
+                        continue  # skip self, resetting your own password isn't escalation
                     emitted_reset.add(t.id)
                     g.add_edge(Edge(src=p.id, dst=t.id, type=EdgeType.CAN_RESET_PASSWORD,
                                     derived=True, primitive="CanResetPassword",
@@ -583,7 +583,7 @@ def _derive_storage_key_access(g: Graph) -> None:
 def _derive_storage_blob_access(g: Graph) -> None:
     """Storage Blob Data Owner/Contributor/Reader grants direct data-plane access to blobs
     via Entra token authentication. Unlike listKeys (CAN_GET_STORAGE_KEY), no shared
-    key rotation is needed - the holder reads data as a named identity."""
+    key rotation is needed, the holder reads data as a named identity."""
     accounts = g.nodes_of_kind(NodeKind.STORAGE)
     if not accounts:
         return

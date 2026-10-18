@@ -1,4 +1,4 @@
-# Secrets - never commit. .env holds ANTHROPIC_API_KEY.
+# Secrets — never commit. .env holds ANTHROPIC_API_KEY.
 .env
 .env.*
 !.env.example
@@ -31,7 +31,7 @@ Thumbs.db
 # Local machine-specific preview config (absolute paths)
 .claude/launch.json
 
-# Generated report artifacts / scratch (contain live tenant data - never commit)
+# Generated report artifacts / scratch (contain live tenant data — never commit)
 /attack-path-idp.md
 /pod-impact-report.html
 *-report.html

@@ -37,12 +37,12 @@ def _ents_by_principal(g: Graph, rows, *, list_key: str = "roles",
     listed the same person many times inside a single finding: a user holding 10 Tier-0
     roles appeared 10 times, and AZ-RBAC-002 emitted 35,796 entities for 46 principals
     (~7 MB of report payload). That inflated the user-facing affected-count and the
-    score's entity factor while conveying no extra information - the *set* of roles is
+    score's entity factor while conveying no extra information, the *set* of roles is
     the fact, so aggregate it into evidence instead of repeating the principal.
 
     Rows are `(principal_id, value)` or `(principal_id, value, scope)`. When a scope is
     supplied its subscription is resolved to a NAME and accumulated into
-    `evidence["subscriptions"]` - the key the report's "Affected subscriptions" section
+    `evidence["subscriptions"]`, the key the report's "Affected subscriptions" section
     reads. Aggregating without it silently removed that mandatory section from every
     RBAC and Key Vault finding, because the per-assignment entities it used to come from
     no longer existed.
@@ -122,14 +122,14 @@ def _rbac(g: Graph):
 
 
 def _is_tier0_role(role) -> bool:
-    # AzureHound emits "templateId", not "roleTemplateId" - see derive._is_tier0_role.
+    # AzureHound emits "templateId", not "roleTemplateId", see derive._is_tier0_role.
     props = role.props or {}
     tpl = str(props.get("templateId") or props.get("roleTemplateId") or "").lower()
     return (tpl in C.TIER0_ENTRA_ROLE_TEMPLATES) or (role.name or "").lower() in C.TIER0_ENTRA_ROLE_NAMES
 
 
 # =========================================================================== #
-# Domain A - Privileged identity
+# Domain A, Privileged identity
 # =========================================================================== #
 @rule(id="AZ-IDENT-001", title="Excessive Global Administrators",
       severity=Severity.HIGH, category=Category.IDENTITY,
@@ -208,7 +208,7 @@ def recent_tier0_account(g: Graph):
       severity=Severity.HIGH, category=Category.IDENTITY,
       description="Every human Global Administrator is a directory-synced (hybrid) account mastered in "
                   "on-premises Active Directory. There is no cloud-only Global Admin, so a compromise "
-                  "of on-prem AD - or the AD Connect sync account - yields tenant-wide control with no "
+                  "of on-prem AD, or the AD Connect sync account, yields tenant-wide control with no "
                   "independent, cloud-only account to detect, contain or recover from it. Microsoft's "
                   "emergency-access guidance requires cloud-only break-glass GAs precisely so the "
                   "cloud does not inherit on-prem blast radius.",
@@ -226,12 +226,12 @@ def no_cloud_only_global_admin(g: Graph):
         return []
     cloud_only = [p for p in ga_users.values() if "synced" not in p.tags]
     if cloud_only:
-        return []                                   # at least one cloud-only GA exists - good
+        return []                                   # at least one cloud-only GA exists, good
     return [Entity(id="tenant", name=g.tenant_id or "tenant", kind="AZTenant",
                    evidence={"global_admin_count": len(ga_users),
                              "all_hybrid_synced": True,
                              "cloud_only_global_admins": 0,
-                             "note": "every Global Administrator is on-prem-synced - no cloud-only break-glass"})]
+                             "note": "every Global Administrator is on-prem-synced, no cloud-only break-glass"})]
 
 
 @rule(id="AZ-IDENT-003", title="Service principal holds a privileged Entra role",
@@ -277,7 +277,7 @@ def privilege_via_group(g: Graph):
 
 @rule(id="AZ-IDENT-006", title="Disabled user retains a privileged role",
       severity=Severity.MEDIUM, category=Category.HYGIENE,
-      description="A disabled USER account still holds Tier-0 privilege - a directory role OR broad-scope Azure RBAC (Owner / User Access Administrator). Re-enablement (e.g. via account takeover) would restore full privilege. The disabled-service-principal equivalent is AZ-HYG-007.",
+      description="A disabled USER account still holds Tier-0 privilege, a directory role OR broad-scope Azure RBAC (Owner / User Access Administrator). Re-enablement (e.g. via account takeover) would restore full privilege. The disabled-service-principal equivalent is AZ-HYG-007.",
       remediation="Remove privileged roles/assignments from disabled accounts; complete the deprovisioning/offboarding process.",
       data_source=[NodeKind.USER, NodeKind.ROLE],
       frameworks={"MITRE ATT&CK": "T1098"})
@@ -300,7 +300,7 @@ def disabled_with_privilege(g: Graph):
 
 @rule(id="AZ-IDENT-011", title="Enabled privileged account has never signed in",
       severity=Severity.MEDIUM, category=Category.HYGIENE,
-      description="An ENABLED account holds a Tier-0 directory role but has no recorded sign-in activity. A dormant-but-enabled privileged account is a prime, low-visibility takeover target and is often a forgotten or backdoor admin - the disabled case is covered elsewhere; this is the more dangerous enabled one.",
+      description="An ENABLED account holds a Tier-0 directory role but has no recorded sign-in activity. A dormant-but-enabled privileged account is a prime, low-visibility takeover target and is often a forgotten or backdoor admin, the disabled case is covered elsewhere; this is the more dangerous enabled one.",
       remediation="Remove the privileged role or disable the account. If it is an intentional break-glass account, exclude it by design and monitor it explicitly; if it is an automation identity, use a least-privilege service principal instead.",
       data_source=[NodeKind.USER, NodeKind.ROLE],
       frameworks={"MITRE ATT&CK": "T1078"},
@@ -337,13 +337,13 @@ def synced_with_privilege(g: Graph):
 
 @rule(id="AZ-IDENT-016", title="Guest user holds an administrative Entra role (non-Tier-0)",
       severity=Severity.HIGH, category=Category.GUEST,
-      description="An external (guest/B2B) user holds an Entra directory role that is administrative but below Tier-0 - e.g. Billing Administrator, User Administrator, Helpdesk Administrator. Every Entra directory role grants standing management capability, and an account whose credentials are governed by another organisation should not hold one. AZ-IDENT-004 covers the Tier-0 case; this covers the equally-real non-Tier-0 admin roles it does not.",
+      description="An external (guest/B2B) user holds an Entra directory role that is administrative but below Tier-0, e.g. Billing Administrator, User Administrator, Helpdesk Administrator. Every Entra directory role grants standing management capability, and an account whose credentials are governed by another organisation should not hold one. AZ-IDENT-004 covers the Tier-0 case; this covers the equally-real non-Tier-0 admin roles it does not.",
       remediation="Remove directory role assignments from guest accounts. If an external collaborator genuinely needs an administrative role, provision a cloud-only member account governed by this tenant instead, and prefer PIM just-in-time activation.",
       data_source=[NodeKind.USER, NodeKind.ROLE],
       frameworks={"MITRE ATT&CK": "T1078.004", "Best Practice": "External identity governance"})
 def guest_with_nontier0_role(g: Graph):
     # Guests holding a Tier-0 role are AZ-IDENT-004 (Critical); this rule takes the
-    # remainder - any other directory role a guest effectively holds.
+    # remainder, any other directory role a guest effectively holds.
     return _ents_by_principal(g, [
         (p.id, role.name)
         for p in g.nodes_of_kind(NodeKind.USER) if "guest" in p.tags
@@ -367,17 +367,17 @@ def tier0_sprawl(g: Graph):
         return [Entity(id="tenant", name=g.tenant_id or "tenant", kind="AZTenant",
                        evidence={"tier0_principal_count": len(t0),
                                  "recommended_ceiling": _THRESHOLD,
-                                 "note": f"{len(t0)} standing Tier-0 principals - well above the "
+                                 "note": f"{len(t0)} standing Tier-0 principals, well above the "
                                          f"{_THRESHOLD} recommended for a reviewable, least-privilege estate"})]
     return []
 
 
 # =========================================================================== #
-# Domain B - Applications & service principals (crown jewels)
+# Domain B, Applications & service principals (crown jewels)
 # =========================================================================== #
 @rule(id="AZ-APP-001", title="Service principal can grant itself any Entra role",
       severity=Severity.CRITICAL, category=Category.APPLICATION,
-      description="A service principal holds RoleManagement.ReadWrite.Directory (or equivalent) on Microsoft Graph, allowing it to assign itself Global Administrator - a direct tenant takeover primitive.",
+      description="A service principal holds RoleManagement.ReadWrite.Directory (or equivalent) on Microsoft Graph, allowing it to assign itself Global Administrator, a direct tenant takeover primitive.",
       remediation="Remove the RoleManagement.ReadWrite.Directory app role. Replace with least-privilege scoped permissions and rotate the SP credentials.",
       data_source=[NodeKind.SERVICE_PRINCIPAL], references=[SPEC],
       frameworks={"MITRE ATT&CK": "T1098.003", "MS Threat Matrix": "Privilege Escalation"})
@@ -397,24 +397,81 @@ def sp_role_management_write(g: Graph):
 # for high-impact Graph permissions, so it must not also report the ones a more specific rule
 # already covers, or the same SP surfaces twice. Every permission here reads the same
 # `_granted_app_roles` data (directly, or via the can_weaken_controls tag) that AZ-APP-002 does,
-# so excluding it never opens a coverage gap - whenever AZ-APP-002 would have caught it, the
+# so excluding it never opens a coverage gap, whenever AZ-APP-002 would have caught it, the
 # dedicated rule does. UserAuthenticationMethod.ReadWrite.All is deliberately NOT here: it is
 # CanResetPassword (no can_weaken_controls tag) with no dedicated rule, so it stays with -002.
-_APP002_COVERED_ELSEWHERE = frozenset({
-    "RoleManagement.ReadWrite.Directory",           # AZ-APP-001 (CanGrantRole)
-    "AppRoleAssignment.ReadWrite.All",              # AZ-APP-001 (CanGrantAppRole)
-    "PrivilegedAccess.ReadWrite.AzureADGroup",      # AZ-APP-010
-    "EntitlementManagement.ReadWrite.All",          # AZ-APP-011
-    "Domain.ReadWrite.All",                         # AZ-APP-015
-    # AZ-APP-014 (data-exfiltration Graph permissions)
+# Microsoft Graph data-exfiltration APPLICATION permissions, flagged by AZ-APP-014. Module-level
+# and the single source of truth so AZ-APP-002's dedup references the same set.
+_EXFIL_PERMS = frozenset({
     "Mail.ReadWrite.All", "Mail.Read.All", "Mail.Send",
-    "Files.ReadWrite.All", "Sites.ReadWrite.All",
-    "Chat.ReadWrite.All", "ChannelMessage.Read.All",
-    # AZ-APP-009 (can-weaken-controls): every CanWeakenControls permission sets that tag
-    "Policy.ReadWrite.ConditionalAccess", "Policy.ReadWrite.AuthenticationMethod",
-    "RoleManagementPolicy.ReadWrite.Directory", "SecurityConfiguration.ReadWrite.All",
-    "Policy.ReadWrite.PermissionGrant",
+    "Mail.Read", "Mail.ReadWrite", "MailboxSettings.ReadWrite",
+    "Files.ReadWrite.All", "Files.Read.All",
+    "Sites.ReadWrite.All", "Sites.Read.All", "Sites.Manage.All",
+    "Chat.ReadWrite.All", "Chat.Read.All", "ChannelMessage.Read.All",
 })
+
+# Dangerous Graph permissions reported by a MORE SPECIFIC rule, so the AZ-APP-002 catch-all
+# excludes them (one SP is never reported twice). Derived where possible so adding a permission
+# to the table below stays in sync automatically:
+#   * every CanWeakenControls permission  → AZ-APP-009
+#   * every data-exfiltration permission  → AZ-APP-014
+#   * the five escalation/grant permissions that each have their own dedicated rule.
+_APP002_COVERED_ELSEWHERE = frozenset(
+    {
+        "RoleManagement.ReadWrite.Directory",       # AZ-APP-001 (CanGrantRole)
+        "AppRoleAssignment.ReadWrite.All",          # AZ-APP-001 (CanGrantAppRole)
+        "PrivilegedAccess.ReadWrite.AzureADGroup",  # AZ-APP-010
+        "EntitlementManagement.ReadWrite.All",      # AZ-APP-011
+        "Domain.ReadWrite.All",                     # AZ-APP-015
+    }
+    | _EXFIL_PERMS
+    | {p for p, m in C.DANGEROUS_GRAPH_APP_ROLES.items() if m.get("primitive") == "CanWeakenControls"}
+)
+
+_IMPACT_FROM_TIER = {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}
+IMPACT_RANK = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Info": 0}
+
+# Broad tenant-wide READ scopes. Reads are not escalation (so they're not in the dangerous-write
+# table and never fire AZ-APP-002), but these specific scopes carry real reconnaissance / data-
+# exposure value per the security watchlist, so the impact profile (AZ-APP-032) rates them Medium
+# rather than the generic Low it gives ordinary reads, surfacing an over-read-permissioned SP.
+_RECON_READ_PERMS = frozenset({
+    "Directory.Read.All", "User.Read.All", "Group.Read.All", "Application.Read.All",
+    "AuditLog.Read.All", "Policy.Read.All", "RoleManagement.Read.Directory", "Reports.Read.All",
+    "ThreatHunting.Read.All", "People.Read.All", "Notes.Read.All", "Mail.ReadBasic.All",
+    "CallRecords.Read.All", "BitLockerKey.ReadBasic.All", "OnlineMeetingArtifact.Read.All",
+})
+
+
+def classify_graph_permission(perm: str) -> "tuple[str, str]":
+    """Categorise ANY Microsoft Graph application permission by impact band, so every granted
+    permission on every SP is assessed, not just the curated-dangerous ones. Returns
+    (band, reason). Precedence: the data-exfiltration set → the curated table → name patterns.
+
+    Patterns catch permissions not yet in the table (new/unknown scopes) so coverage never
+    silently lapses: a broad write (*.ReadWrite.All / *.Manage*) is at least High, a scoped
+    write is Medium, a broad read (*.Read.All) is Low, everything else is Info.
+    """
+    if not perm:
+        return "Info", "empty"
+    # Bulk data access (mail / files / sites / chat) is High impact regardless of how the
+    # escalation engine weights it in the table, so it is classified first.
+    if perm in _EXFIL_PERMS:
+        return "High", "bulk data access"
+    meta = C.DANGEROUS_GRAPH_APP_ROLES.get(perm)
+    if meta:
+        return _IMPACT_FROM_TIER.get(meta.get("tier"), "Medium"), "curated dangerous permission"
+    if perm in _RECON_READ_PERMS:
+        return "Medium", "broad reconnaissance / data-exposure read"
+    p = perm.lower()
+    if (perm.endswith(".ReadWrite.All") or ".manage.all" in p or perm.endswith(".FullControl.All")
+            or "readwrite.directory" in p or "readwrite.ownedby" in p):
+        return "High", "broad write / management permission"
+    if ".readwrite" in p or p.endswith(".write") or ".manage" in p or ".create" in p or "accessas" in p:
+        return "Medium", "write-capable permission"
+    if perm.endswith(".Read.All") or perm.endswith(".ReadBasic.All"):
+        return "Low", "broad (tenant-wide) read permission"
+    return "Info", "scoped or read-only permission"
 
 
 @rule(id="AZ-APP-002", title="Service principal holds dangerous Graph write permission",
@@ -465,6 +522,157 @@ def app_secret_not_certificate(g: Graph):
     return out
 
 
+@rule(id="AZ-APP-032",
+      title="Service principal holds broad permissions not otherwise flagged (least privilege)",
+      severity=Severity.MEDIUM, category=Category.APPLICATION,
+      description="The least-privilege catch-all: it categorises every Microsoft Graph "
+                  "application permission a service principal holds by impact "
+                  "(Critical / High / Medium / Low), and flags the SP for the medium-or-higher "
+                  "permissions that NO dedicated rule already reports, broad reconnaissance "
+                  "reads (Directory/User/Group/Policy.Read.All, …) and any write scope not in "
+                  "the curated dangerous-permission catalog (rated by name pattern so a new or "
+                  "unknown scope is never silently ignored). Permissions already called out by "
+                  "AZ-APP-001/002/009/010/011/014/015/017 are deliberately NOT repeated here, so "
+                  "one SP is not reported twice. An SP whose only notable permissions already "
+                  "have a dedicated finding, or that holds only narrowly-scoped/read-only "
+                  "permissions, is not flagged.",
+      remediation="Review each listed permission against what the application actually needs. "
+                  "Remove broad read and write scopes that aren't required, prefer narrowly-"
+                  "scoped or delegated permissions, and re-run admin consent on the trimmed set.",
+      data_source=[NodeKind.SERVICE_PRINCIPAL],
+      frameworks={"MITRE ATT&CK": "T1098.003", "Best Practice": "Least privilege"})
+def sp_permission_impact_profile(g: Graph):
+    # Permissions that already have a dedicated finding, excluded so AZ-APP-032 is a true
+    # catch-all (no SP is reported twice for the same permission).
+    # full_access_as_app has its own dedicated rule (AZ-APP-033); exclude it so the catch-all
+    # never double-reports an SP that -033 already covers.
+    already_flagged = set(C.DANGEROUS_GRAPH_APP_ROLES) | _EXFIL_PERMS | {"full_access_as_app"}
+    out = []
+    for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
+        if "foreign_tenant" in sp.tags:
+            continue  # you don't manage an external app's permission grants
+        perms = sorted({ar.get("value") for ar in (sp.props.get("_granted_app_roles") or [])
+                        if ar.get("value")})
+        if not perms:
+            continue
+        # The medium-or-higher permissions this rule OWNS: those without a dedicated finding.
+        by_impact = {"Critical": [], "High": [], "Medium": []}
+        for p in perms:
+            if p in already_flagged:
+                continue
+            band, _ = classify_graph_permission(p)
+            if band in by_impact:
+                by_impact[band].append(p)
+        owned = by_impact["Critical"] + by_impact["High"] + by_impact["Medium"]
+        if not owned:
+            continue  # everything notable is already covered by a dedicated rule (no duplicate)
+        rating = max((b for b in by_impact if by_impact[b]), key=lambda b: IMPACT_RANK[b])
+        counts = {b: len(v) for b, v in by_impact.items() if v}
+        out.append(_ent(g, sp.id, impact_rating=rating,
+                        permissions_total=len(perms), unflagged_count=len(owned),
+                        by_impact=counts, notable_permissions=owned[:12],
+                        note=f"{len(owned)} broad permission(s) not flagged elsewhere, "
+                             f"impact rating {rating} ({', '.join(f'{n} {b}' for b, n in counts.items())}); "
+                             f"{len(perms)} Graph permission(s) in total"))
+    return out
+
+
+def _resource_api_name(g: Graph, resource_id, catalog: dict) -> "str | None":
+    """Resolve a grant's resource service-principal object id to its API name, but ONLY when
+    that API is one of the dangerous ones in `catalog` (keyed by well-known appId). The grant
+    stores the resource's object id; the API is identified by the resource SP's stable `appId`.
+    Returns the human-readable API name, or None when the resource is not a flagged API."""
+    if not resource_id:
+        return None
+    res = g.node(g.resolve_id(resource_id) or "")
+    app_id = str((res.props or {}).get("appId") or "").lower() if res else ""
+    return catalog.get(app_id)
+
+
+@rule(id="AZ-APP-033",
+      title="Service principal holds full-tenant app access to Exchange Online or SharePoint",
+      severity=Severity.CRITICAL, category=Category.APPLICATION,
+      description="A service principal has been granted the full_access_as_app APPLICATION "
+                  "permission on Office 365 Exchange Online or SharePoint Online, full, app-only "
+                  "access to EVERY mailbox or site in the tenant, with no user context and no "
+                  "per-object consent. One of the highest-impact application grants that exists, and "
+                  "because it is a non-Microsoft-Graph API permission the Graph-permission rules "
+                  "never see it.",
+      remediation="Remove the full_access_as_app grant. Scope the app to specific mailboxes with an "
+                  "Exchange Application Access Policy, or to specific sites with Sites.Selected, and "
+                  "rotate the service principal's credentials.",
+      data_source=[NodeKind.SERVICE_PRINCIPAL],
+      requires_records=["AZAppRoleAssignment"], references=[SPEC],
+      frameworks={"MITRE ATT&CK": "T1098.003"})
+def sp_full_access_as_app(g: Graph):
+    # External (multi-tenant) apps are intentionally IN scope: a third-party SaaS holding
+    # full_access_as_app on your Exchange/SharePoint is an illicit-consent risk in its own
+    # right (nothing else flags it), so external-ness is recorded in evidence, not excluded.
+    out = []
+    for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
+        apis = []
+        for ar in sp.props.get("_granted_app_roles", []) or []:
+            if ar.get("value") != "full_access_as_app":
+                continue
+            api = _resource_api_name(g, ar.get("resource_id"), C.FULL_ACCESS_AS_APP_APIS)
+            if api:
+                apis.append(api)
+        if apis:
+            apis = sorted(set(apis))
+            external = "foreign_tenant" in sp.tags
+            out.append(_ent(g, sp.id, permission="full_access_as_app", apis=apis,
+                            external=external,
+                            note=("EXTERNAL app with " if external else "") +
+                                 "full app-only access to all " + " and ".join(apis)))
+    return out
+
+
+@rule(id="AZ-APP-034",
+      title="Service principal can impersonate users against Azure management APIs",
+      severity=Severity.HIGH, category=Category.APPLICATION,
+      description="A service principal holds an admin-consented (tenant-wide) user_impersonation "
+                  "delegated scope on an Azure management API, Azure Service Management (the ARM "
+                  "control plane) or Azure Key Vault. With a signed-in user session the app can act "
+                  "as that user across every subscription and resource they can reach (ARM) or every "
+                  "vault they can reach (Key Vault). This is a non-Graph delegated grant, invisible "
+                  "to the Graph-permission rules. user_impersonation on ordinary APIs is deliberately "
+                  "NOT flagged, only the management-plane APIs carry this blast radius.",
+      remediation="Revoke the tenant-wide user_impersonation grant on Azure Service Management / "
+                  "Key Vault. If automation needs Azure access, assign the service principal a "
+                  "least-privilege Azure RBAC role on the specific scope instead of user-delegated "
+                  "management access.",
+      data_source=[NodeKind.SERVICE_PRINCIPAL],
+      requires_records=["AZOAuth2GrantDelegated"], references=[SPEC],
+      frameworks={"MITRE ATT&CK": "T1550.001"})
+def sp_user_impersonation_mgmt(g: Graph):
+    # External (multi-tenant) apps are IN scope: an external app with tenant-wide
+    # user_impersonation on ARM / Key Vault can drive your management plane as your users,
+    # which no other rule covers. External-ness is recorded in evidence, not excluded.
+    out = []
+    for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
+        apis = []
+        for gr in sp.props.get("_delegated_grants", []) or []:
+            scopes = [s.lower() for s in str(gr.get("scope") or "").split()]
+            if "user_impersonation" not in scopes:
+                continue
+            # Only tenant-wide (admin-consented) grants carry the broad risk; a single-user
+            # consent is scoped to that one user's session.
+            if str(gr.get("consent_type") or "").lower() != "allprincipals":
+                continue
+            api = _resource_api_name(g, gr.get("resource_id"), C.USER_IMPERSONATION_MGMT_APIS)
+            if api:
+                apis.append(api)
+        if apis:
+            apis = sorted(set(apis))
+            external = "foreign_tenant" in sp.tags
+            out.append(_ent(g, sp.id, permission="user_impersonation",
+                            consent="tenant-wide (AllPrincipals)", apis=apis,
+                            external=external,
+                            note=("EXTERNAL app with " if external else "") +
+                                 "admin-consented impersonation of " + " and ".join(apis)))
+    return out
+
+
 @rule(id="AZ-APP-003", title="Application owned by a non-privileged user (AddSecret escalation)",
       severity=Severity.HIGH, category=Category.APPLICATION,
       description="A privileged application/service principal is owned by a non-Tier-0 principal. An owner can add credentials and authenticate as the SP, inheriting its privilege.",
@@ -498,7 +706,7 @@ def long_lived_credentials(g: Graph):
     # Azure's portal caps a client secret at 24 months, so any credential whose
     # validity window exceeds ~2 years was deliberately extended via API/script
     # and represents standing credential risk. Flag non-expiring, far-future
-    # (>=2099), AND long-lived (>730-day) windows - the last class (e.g. a
+    # (>=2099), AND long-lived (>730-day) windows, the last class (e.g. a
     # 60-year secret with end-year <2099) previously slipped through silently.
     from datetime import datetime
 
@@ -564,7 +772,7 @@ def multi_tenant_app(g: Graph):
       severity=Severity.MEDIUM, category=Category.APPLICATION,
       description="An application's sign-in audience includes personal Microsoft accounts "
                   "(signInAudience = AzureADandPersonalMicrosoftAccount or PersonalMicrosoftAccount). "
-                  "Any consumer Microsoft account - Outlook.com, Hotmail, Xbox, Skype - can authenticate "
+                  "Any consumer Microsoft account, Outlook.com, Hotmail, Xbox, Skype, can authenticate "
                   "to the app, not just the organisation's work/school identities. This trust boundary is "
                   "far wider than intended for most enterprise apps and is a common oversight.",
       remediation="Unless the app genuinely serves consumers, set signInAudience to AzureADMyOrg "
@@ -582,7 +790,7 @@ def personal_msa_app(g: Graph):
 
 
 # =========================================================================== #
-# Domain C - Azure RBAC
+# Domain C, Azure RBAC
 # =========================================================================== #
 @rule(id="AZ-RBAC-001", title="Owner role assigned at management-group scope",
       severity=Severity.CRITICAL, category=Category.RBAC,
@@ -616,7 +824,7 @@ def uaa_broad_scope(g: Graph):
 
 @rule(id="AZ-RBAC-011", title="Custom RBAC role at broad scope (privilege not analysed)",
       severity=Severity.MEDIUM, category=Category.RBAC,
-      description="A principal holds a CUSTOM Azure RBAC role at subscription or management-group scope. Custom roles are not in the built-in catalogue, so their actions - which may include Microsoft.Authorization/roleAssignments/write, a wildcard */action, or listKeys (full self-escalation) - are not analysed here. The role definition must be reviewed; the model reasons over built-in role names, not custom-role actions.",
+      description="A principal holds a CUSTOM Azure RBAC role at subscription or management-group scope. Custom roles are not in the built-in catalogue, so their actions, which may include Microsoft.Authorization/roleAssignments/write, a wildcard */action, or listKeys (full self-escalation), are not analysed here. The role definition must be reviewed; the model reasons over built-in role names, not custom-role actions.",
       remediation="Review the custom role's Actions/DataActions. If it grants role-assignment write, wildcard actions, or key/secret access at broad scope, treat it as a privileged role, restrict its scope, and prefer a least-privilege built-in role.",
       data_source=[NodeKind.SUBSCRIPTION],
       frameworks={"MITRE ATT&CK": "T1098"})
@@ -674,7 +882,7 @@ def sp_broad_rbac(g: Graph):
 
 
 # =========================================================================== #
-# Domain D - Groups & membership
+# Domain D, Groups & membership
 # =========================================================================== #
 @rule(id="AZ-GRP-001", title="Role-assignable group with dynamic membership",
       severity=Severity.HIGH, category=Category.GROUP,
@@ -690,14 +898,14 @@ def role_group_dynamic(g: Graph):
 
 # AZ-GRP-002 (non-privileged owner of a privileged group) was removed in the V2 dedup: it fired
 # on the exact same relation as AZ-GRP-003 (a non-Tier-0 principal with CAN_ADD_MEMBER into a
-# privileged/Tier-0 group - the two rules computed an identical privileged-group set) and drove
+# privileged/Tier-0 group, the two rules computed an identical privileged-group set) and drove
 # the same remediation, differing only in which endpoint it reported. AZ-GRP-003 is the survivor:
 # it is correctly CRITICAL (a Tier-0-group escalation) and already records the adding principal in
 # its evidence (joinable_by / adder_id), so no signal is lost.
 
 
 # =========================================================================== #
-# Domain E - Key Vault
+# Domain E, Key Vault
 # =========================================================================== #
 @rule(id="AZ-KV-001", title="Principal can read secrets from multiple Key Vaults",
       severity=Severity.HIGH, category=Category.KEYVAULT,
@@ -747,13 +955,13 @@ def kv_legacy_access_policy(g: Graph):
                             confirmed=rbac_auth is False,
                             note="legacy access-policy model in use"
                                  if rbac_auth is False else
-                                 "RBAC authorization not enabled (flag absent - Azure omits "
+                                 "RBAC authorization not enabled (flag absent, Azure omits "
                                  "it when off, so the legacy access-policy model applies)"))
     return out
 
 
 # =========================================================================== #
-# Domain F - Managed identities & resources
+# Domain F, Managed identities & resources
 # =========================================================================== #
 @rule(id="AZ-MI-001", title="Resource managed identity has broad privilege (IMDS pivot)",
       severity=Severity.HIGH, category=Category.MANAGED_IDENTITY,
@@ -791,7 +999,7 @@ def mi_broad_privilege(g: Graph):
 
 
 # =========================================================================== #
-# Domain G - Hygiene & best practices
+# Domain G, Hygiene & best practices
 # =========================================================================== #
 @rule(id="AZ-HYG-001", title="High proportion of guest users",
       severity=Severity.LOW, category=Category.BEST_PRACTICE, best_practice=True,
@@ -824,7 +1032,7 @@ _DISABLED_SP_PRIV_TAGS = frozenset({
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"Best Practice": "Identity lifecycle"})
 def stale_sp(g: Graph):
-    # Skip the privileged disabled SPs - AZ-HYG-007 reports those, so -002 isn't a duplicate row.
+    # Skip the privileged disabled SPs, AZ-HYG-007 reports those, so -002 isn't a duplicate row.
     return [_ent(g, sp.id, note="disabled service principal present")
             for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL)
             if "disabled" in sp.tags and not (sp.tags & _DISABLED_SP_PRIV_TAGS)]
@@ -832,7 +1040,7 @@ def stale_sp(g: Graph):
 
 @rule(id="AZ-HYG-007", title="Disabled service principal still holds privileged authorization",
       severity=Severity.MEDIUM, category=Category.HYGIENE,
-      description="A disabled service principal still carries privileged authorization - a Tier-0 "
+      description="A disabled service principal still carries privileged authorization, a Tier-0 "
                   "directory role, a dangerous Microsoft Graph app permission, or the ability to "
                   "self-escalate. Being disabled it cannot authenticate today, but the standing "
                   "grant remains: an owner (or an attacker who can re-enable it) flips accountEnabled "
@@ -864,7 +1072,7 @@ def direct_privileged_assignment(g: Graph):
 
 
 # =========================================================================== #
-# Domain H - Attack-path derived
+# Domain H, Attack-path derived
 # =========================================================================== #
 @rule(id="AZ-PATH-001", title="Non-privileged principal can escalate to a Tier-0 role",
       severity=Severity.CRITICAL, category=Category.ATTACK_PATH,
@@ -892,7 +1100,7 @@ def path_to_tier0(g: Graph):
 
 
 # =========================================================================== #
-# Domain I - Compute & resource-plane abuse
+# Domain I, Compute & resource-plane abuse
 # =========================================================================== #
 @rule(id="AZ-RBAC-006", title="Compute role enables managed-identity theft (run-command → IMDS)",
       severity=Severity.HIGH, category=Category.COMPUTE,
@@ -941,11 +1149,11 @@ _ESCALATION_PRIMITIVES = {
 
 @rule(id="AZ-PATH-003", title="Disabled account retains a one-hop escalation primitive to Tier-0",
       severity=Severity.CRITICAL, category=Category.ATTACK_PATH,
-      description="A DISABLED principal still holds a derived escalation primitive - add a credential "
+      description="A DISABLED principal still holds a derived escalation primitive, add a credential "
                   "to a Tier-0 service principal (CanAddSecret), add itself to a Tier-0 group "
                   "(CanAddMember), take ownership (CanAddOwner), grant a role (CanGrantRole / "
                   "CanGrantAppRole), self-escalate RBAC (CanEscalateRBAC), or reset a Tier-0 "
-                  "principal's password (CanResetPassword) - whose target is Tier-0. Being disabled it "
+                  "principal's password (CanResetPassword), whose target is Tier-0. Being disabled it "
                   "cannot sign in today, but Azure/Entra does not strip these rights on disable: a "
                   "help-desk mistake, a stale on-prem sync that re-activates the account, or an insider "
                   "re-enabling it restores a single-hop path to Tier-0. Disabled identities are also "
@@ -955,7 +1163,7 @@ _ESCALATION_PRIMITIVES = {
                   "one abuse edge away from Tier-0.",
       remediation="Revoke the escalation primitive (remove the group-membership-management right, app "
                   "ownership, role-grant permission, or reset capability) before leaving the account "
-                  "disabled - or delete the account. Do not rely on the disabled flag as a control.",
+                  "disabled, or delete the account. Do not rely on the disabled flag as a control.",
       data_source=[NodeKind.USER, NodeKind.SERVICE_PRINCIPAL, NodeKind.ROLE], references=[SPEC],
       frameworks={"MITRE ATT&CK": "T1078.004", "MS Threat Matrix": "Privilege Escalation"})
 def disabled_one_hop_to_tier0(g: Graph):
@@ -977,11 +1185,11 @@ def disabled_one_hop_to_tier0(g: Graph):
 
 
 # =========================================================================== #
-# Domain J - Authentication-admin & password reset
+# Domain J, Authentication-admin & password reset
 # =========================================================================== #
 @rule(id="AZ-IDENT-008", title="Privileged Authentication Administrator can reset any password",
       severity=Severity.HIGH, category=Category.IDENTITY,
-      description="A principal holds Privileged Authentication Administrator, which can reset credentials and manage authentication methods for ANY account, including Global Administrators - a direct Tier-0 takeover path.",
+      description="A principal holds Privileged Authentication Administrator, which can reset credentials and manage authentication methods for ANY account, including Global Administrators, a direct Tier-0 takeover path.",
       remediation="Remove the role or restrict it to PIM-eligible, approval-gated, audited use. Treat it as Tier-0.",
       data_source=[NodeKind.ROLE], references=[MS],
       frameworks={"MITRE ATT&CK": "T1098", "MS Threat Matrix": "Persistence"})
@@ -1032,7 +1240,7 @@ def app_admin_any_app(g: Graph):
 
 
 # =========================================================================== #
-# Domain K - Key Vault management-plane & storage
+# Domain K, Key Vault management-plane & storage
 # =========================================================================== #
 @rule(id="AZ-KV-003", title="Key Vault management-plane access can expose secrets",
       severity=Severity.HIGH, category=Category.KEYVAULT,
@@ -1053,9 +1261,9 @@ def kv_management_access(g: Graph):
 @rule(id="AZ-KV-012", title="Key Vault is readable by an unusually large number of principals",
       severity=Severity.MEDIUM, category=Category.KEYVAULT,
       description="A single Key Vault grants data-plane access (secrets/keys/certificates) directly to "
-                  "a large number of distinct principals via access policies. A broad accessor list - "
+                  "a large number of distinct principals via access policies. A broad accessor list, "
                   "common under the legacy access-policy model, where grants are coarse (get/list/all) "
-                  "and vault-wide rather than per-secret - means every one of those identities can read "
+                  "and vault-wide rather than per-secret, means every one of those identities can read "
                   "every secret in the vault. The vault becomes a high-value, low-effort target: "
                   "compromising ANY one of the accessors yields the whole secret inventory, and the "
                   "large surface makes least-privilege review impractical.",
@@ -1107,7 +1315,7 @@ def orphaned_app(g: Graph):
 
 
 # =========================================================================== #
-# Domain L - Application credential & control-plane surface
+# Domain L, Application credential & control-plane surface
 # =========================================================================== #
 @rule(id="AZ-APP-008", title="Privileged application/SP has a federated identity credential",
       severity=Severity.HIGH, category=Category.APPLICATION,
@@ -1125,7 +1333,7 @@ def federated_credential(g: Graph):
             ci = [i for i in issuers if any(k in i.lower() for k in _CI)]
             note = "federated identity credential on a privileged identity"
             if ci:
-                note += (" - trusts an external CI/OIDC issuer, so anyone who can push to (or open a "
+                note += (", trusts an external CI/OIDC issuer, so anyone who can push to (or open a "
                          "PR against) the trusted repo/pipeline can mint a token as this privileged identity")
             out.append(_ent(g, n.id, issuers=issuers[:5], trusts_ci=bool(ci), note=note))
     return out
@@ -1143,7 +1351,7 @@ def control_weakening_sp(g: Graph):
 
 
 # =========================================================================== #
-# Domain M - Storage & Key Vault data-plane
+# Domain M, Storage & Key Vault data-plane
 # =========================================================================== #
 @rule(id="AZ-STOR-002", title="Storage account keys retrievable via RBAC (listKeys)",
       severity=Severity.HIGH, category=Category.STORAGE,
@@ -1164,7 +1372,7 @@ def storage_key_access(g: Graph):
 
 @rule(id="AZ-KV-004", title="Key Vault grants cryptographic key operations (sign/decrypt)",
       severity=Severity.MEDIUM, category=Category.KEYVAULT,
-      description="A principal holds Key Vault key permissions enabling cryptographic operations (sign, decrypt, unwrapKey, wrapKey). Even without exporting the key, the holder can use it - forging signatures or decrypting protected data.",
+      description="A principal holds Key Vault key permissions enabling cryptographic operations (sign, decrypt, unwrapKey, wrapKey). Even without exporting the key, the holder can use it, forging signatures or decrypting protected data.",
       remediation="Restrict key operation permissions to the specific services that need them; separate sign/decrypt from management permissions.",
       data_source=[NodeKind.KEY_VAULT],
       frameworks={"MITRE ATT&CK": "T1552.001"})
@@ -1204,7 +1412,7 @@ def kv_purge_protection(g: Graph):
             if purge is False:
                 reasons.append("purge protection disabled")
             elif purge is None:
-                reasons.append("purge protection not enabled (flag absent - Azure omits it when off)")
+                reasons.append("purge protection not enabled (flag absent, Azure omits it when off)")
             out.append(_ent(g, kv.id, subscription=_subscription_for(g, kv.id),
                             enablePurgeProtection=purge if purge is not None else "not set",
                             enableSoftDelete=soft,
@@ -1214,11 +1422,11 @@ def kv_purge_protection(g: Graph):
 
 
 # =========================================================================== #
-# Domain N - Resource-plane credential access
+# Domain N, Resource-plane credential access
 # =========================================================================== #
 @rule(id="AZ-RBAC-007", title="AKS cluster-admin credentials retrievable via RBAC",
       severity=Severity.HIGH, category=Category.COMPUTE,
-      description="A principal can pull cluster-admin credentials for an AKS cluster (listClusterAdminCredential) or holds a cluster-admin role, granting full Kubernetes control - workload tampering, secret theft, and managed-identity abuse on the nodes.",
+      description="A principal can pull cluster-admin credentials for an AKS cluster (listClusterAdminCredential) or holds a cluster-admin role, granting full Kubernetes control, workload tampering, secret theft, and managed-identity abuse on the nodes.",
       remediation="Disable local accounts on AKS and use Entra/Kubernetes RBAC, restrict the listClusterAdminCredential-capable roles, and scope assignments tightly.",
       data_source=[NodeKind.AKS],
       frameworks={"MS Threat Matrix": "Lateral Movement", "MITRE ATT&CK": "T1552.005"})
@@ -1233,7 +1441,7 @@ def aks_cluster_cred(g: Graph):
 
 @rule(id="AZ-STOR-003", title="Principal has direct Storage Blob Data access (Entra data-plane role)",
       severity=Severity.HIGH, category=Category.STORAGE,
-      description="A principal holds Storage Blob Data Owner, Contributor, or Reader on a storage account. Unlike the listKeys path, this grants named-identity Entra token access to all blob data - a quieter exfiltration path that bypasses shared-key monitoring and requires no key rotation to exploit.",
+      description="A principal holds Storage Blob Data Owner, Contributor, or Reader on a storage account. Unlike the listKeys path, this grants named-identity Entra token access to all blob data, a quieter exfiltration path that bypasses shared-key monitoring and requires no key rotation to exploit.",
       remediation="Review whether this level of blob access is required. Prefer tightly scoped container-level RBAC over account-level data roles. Enable storage diagnostic logs for blob operations.",
       data_source=[NodeKind.STORAGE],
       frameworks={"MITRE ATT&CK": "T1530", "CIS Azure": "3.x"})
@@ -1270,7 +1478,7 @@ def container_push_access(g: Graph):
       description=(
           "A single Azure Container Registry can have images pushed to it by a large number of "
           "distinct principals. Any one of them can poison an image that downstream workloads "
-          "(AKS clusters, App Services, functions) pull and execute - so the registry is a shared "
+          "(AKS clusters, App Services, functions) pull and execute, so the registry is a shared "
           "supply-chain chokepoint whose effective trust boundary is the UNION of everyone who can "
           "push. AZ-RBAC-009 flags each pusher individually; this names the registry itself as the "
           "concentrated risk and quantifies how many principals must be trusted, which is the "
@@ -1296,14 +1504,14 @@ def registry_broad_push(g: Graph):
             out.append(_ent(g, rid, subscription=_subscription_for(g, rid),
                             distinct_pushers=len(srcs),
                             note=(f"{len(srcs)} distinct principals can push images to this "
-                                  f"registry - any one can poison what downstream workloads pull")))
+                                  f"registry, any one can poison what downstream workloads pull")))
     out.sort(key=lambda e: -(e.evidence.get("distinct_pushers") or 0))
     return out
 
 
 @rule(id="AZ-APP-010", title="Service principal can activate Tier-0 group memberships via PIM",
       severity=Severity.HIGH, category=Category.APPLICATION,
-      description="A service principal holds PrivilegedAccess.ReadWrite.AzureADGroup, which enables managing PIM eligible and active assignments for Entra groups. It can activate a group membership for any principal into a group that holds a Tier-0 role - achieving full privilege escalation without directly touching directory role assignments.",
+      description="A service principal holds PrivilegedAccess.ReadWrite.AzureADGroup, which enables managing PIM eligible and active assignments for Entra groups. It can activate a group membership for any principal into a group that holds a Tier-0 role, achieving full privilege escalation without directly touching directory role assignments.",
       remediation="Remove this permission unless the SP is a dedicated PIM governance tool. If required, scope it tightly and alert on all group PIM activation events generated by this SP.",
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1098", "MS Threat Matrix": "Privilege Escalation"})
@@ -1316,7 +1524,7 @@ def sp_pim_group_write(g: Graph):
 
 @rule(id="AZ-APP-011", title="Service principal can add users to any group via Entitlement Management",
       severity=Severity.HIGH, category=Category.APPLICATION,
-      description="A service principal holds EntitlementManagement.ReadWrite.All, which enables managing access packages and directly adding any user to any group - including Tier-0 role-assignable groups. This is a shadow path to Tier-0 that bypasses direct role assignment auditing.",
+      description="A service principal holds EntitlementManagement.ReadWrite.All, which enables managing access packages and directly adding any user to any group, including Tier-0 role-assignable groups. This is a shadow path to Tier-0 that bypasses direct role assignment auditing.",
       remediation="Remove this permission unless it belongs to a dedicated identity governance SP. Monitor all access package assignments and group additions made by this SP via the Entra audit log.",
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1098", "MS Threat Matrix": "Privilege Escalation"})
@@ -1390,7 +1598,7 @@ def disabled_user_rbac(g: Graph):
 
 @rule(id="AZ-STOR-004", title="Storage account has shared-key access enabled",
       severity=Severity.MEDIUM, category=Category.STORAGE,
-      description="The storage account allows authentication with the account-level shared key (allowSharedKeyAccess is not disabled). Shared keys bypass Entra identity and RBAC controls, grant full data-plane access, cannot be revoked per-user, and are often hardcoded in application config - a single key leak exposes all storage data.",
+      description="The storage account allows authentication with the account-level shared key (allowSharedKeyAccess is not disabled). Shared keys bypass Entra identity and RBAC controls, grant full data-plane access, cannot be revoked per-user, and are often hardcoded in application config, a single key leak exposes all storage data.",
       remediation="Set allowSharedKeyAccess=false on all storage accounts and migrate applications to use Entra-based authentication (managed identity or service principal RBAC).",
       data_source=[NodeKind.STORAGE],
       requires_props=['allowSharedKeyAccess'],
@@ -1398,7 +1606,7 @@ def disabled_user_rbac(g: Graph):
 def storage_shared_key_access(g: Graph):
     # Only a COLLECTED allowSharedKeyAccess=true is a finding. When the property was not
     # collected the rule is reported not-assessed (requires_props gate), never as a per-
-    # account UNCONFIRMED finding - otherwise an AzureHound-only scan emitted one row per
+    # account UNCONFIRMED finding, otherwise an AzureHound-only scan emitted one row per
     # storage account (309 here) for a control it never actually saw.
     out = []
     for s in g.nodes_of_kind(NodeKind.STORAGE):
@@ -1411,7 +1619,7 @@ def storage_shared_key_access(g: Graph):
 
 @rule(id="AZ-KV-006", title="Key Vault network access not restricted",
       severity=Severity.MEDIUM, category=Category.KEYVAULT,
-      description="A Key Vault has its network ACL default action set to Allow (or no firewall configured). Any host on the internet can reach the management and data-plane endpoints - while auth is still required, it removes network-layer defence-in-depth and enables unauthenticated enumeration attacks.",
+      description="A Key Vault has its network ACL default action set to Allow (or no firewall configured). Any host on the internet can reach the management and data-plane endpoints, while auth is still required, it removes network-layer defence-in-depth and enables unauthenticated enumeration attacks.",
       remediation="Set the Key Vault firewall defaultAction to Deny, restrict to specific VNets/IP ranges, and enable Private Endpoints for sensitive workloads.",
       data_source=[NodeKind.KEY_VAULT],
       frameworks={"CIS Azure": "8.x", "Best Practice": "Network restriction"})
@@ -1421,8 +1629,8 @@ def kv_network_open(g: Graph):
         props = kv.props.get("properties") or kv.props
         # Distinguish "networkAcls key absent from the collection" from "key present but
         # empty". `props.get("networkAcls") or {}` collapsed both into one branch, which
-        # made an EMPTY-but-present ACL - meaning no firewall rules exist, i.e. the vault
-        # genuinely accepts all networks - get labelled UNCONFIRMED. On a real tenant that
+        # made an EMPTY-but-present ACL, meaning no firewall rules exist, i.e. the vault
+        # genuinely accepts all networks, get labelled UNCONFIRMED. On a real tenant that
         # was 320 of 515 vaults told "verify first" when the collection already proved
         # them open. Only a missing key is actually unconfirmed.
         has_acls_key = "networkAcls" in props
@@ -1431,17 +1639,17 @@ def kv_network_open(g: Graph):
         if raw_action is not None and str(raw_action).lower() == "allow":
             out.append(_ent(g, kv.id, subscription=_subscription_for(g, kv.id),
                             networkAcls_defaultAction=raw_action, confirmed=True,
-                            note="defaultAction=Allow - vault reachable from any network"))
+                            note="defaultAction=Allow, vault reachable from any network"))
         elif has_acls_key and not acls:
             out.append(_ent(g, kv.id, subscription=_subscription_for(g, kv.id),
                             networkAcls_defaultAction="none configured", confirmed=True,
-                            note="no firewall rules configured on the vault - open to all networks"))
+                            note="no firewall rules configured on the vault, open to all networks"))
         elif not has_acls_key:
             out.append(_ent(g, kv.id, subscription=_subscription_for(g, kv.id),
                             networkAcls_defaultAction="not collected", confirmed=False,
                             note="networkAcls absent from the collection; an unconfigured "
                                  "firewall defaults to Allow, so the vault is likely "
-                                 "internet-reachable but this is UNCONFIRMED - verify first"))
+                                 "internet-reachable but this is UNCONFIRMED, verify first"))
     return out
 
 
@@ -1471,11 +1679,7 @@ def excessive_sp_credentials(g: Graph):
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1114.002", "MS Threat Matrix": "Collection"})
 def sp_data_exfiltration_perms(g: Graph):
-    _EXFIL = {
-        "Mail.ReadWrite.All", "Mail.Read.All", "Mail.Send",
-        "Files.ReadWrite.All", "Sites.ReadWrite.All",
-        "Chat.ReadWrite.All", "ChannelMessage.Read.All",
-    }
+    _EXFIL = _EXFIL_PERMS
     seen: set[str] = set()
     out = []
     for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
@@ -1492,7 +1696,7 @@ def sp_data_exfiltration_perms(g: Graph):
 
 @rule(id="AZ-APP-015", title="Service principal holds Domain.ReadWrite.All (tenant federation takeover)",
       severity=Severity.CRITICAL, category=Category.APPLICATION,
-      description="A service principal holds Domain.ReadWrite.All on Microsoft Graph. This permission allows registering a new federated domain and configuring an attacker-controlled external identity provider as a SAML/OIDC issuer, after which the external IdP can issue valid tokens for any user in the tenant - a full tenant takeover without touching user credentials.",
+      description="A service principal holds Domain.ReadWrite.All on Microsoft Graph. This permission allows registering a new federated domain and configuring an attacker-controlled external identity provider as a SAML/OIDC issuer, after which the external IdP can issue valid tokens for any user in the tenant, a full tenant takeover without touching user credentials.",
       remediation="Remove Domain.ReadWrite.All unless this SP is a dedicated domain/federation management tool. Monitor domain configuration changes via the Entra audit log.",
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1484.002", "MS Threat Matrix": "Persistence"})
@@ -1511,7 +1715,7 @@ def sp_domain_write(g: Graph):
           "(e.g. Directory.ReadWrite.All, RoleManagement.ReadWrite.Directory) that was "
           "admin-consented for ALL users (consentType AllPrincipals). This is the "
           "illicit-consent-grant surface: when any admin uses the app, it can write to the "
-          "directory or manage roles on their behalf - a persistence and escalation path "
+          "directory or manage roles on their behalf, a persistence and escalation path "
           "that an application-permission-only view (AzureHound) does not see."
       ),
       remediation=(
@@ -1542,7 +1746,7 @@ def dangerous_delegated_grant(g: Graph):
 @rule(id="AZ-APP-023",
       title="Multi-tenant (external) app holds a tenant-wide dangerous delegated Graph permission",
       severity=Severity.MEDIUM, category=Category.APPLICATION,
-      description="An application whose registration lives in ANOTHER tenant (a third-party SaaS or Microsoft-published multi-tenant app) has been admin-consented, for ALL users, to a high-impact delegated Microsoft Graph scope (e.g. Directory.ReadWrite.All, User.ReadWrite.All). Delegated tenant-wide consent lets the external app act with the signed-in user's directory privileges - so when a privileged user signs in, the external service can write to the directory on their behalf. AZ-APP-017 deliberately skips external apps (you cannot add a credential to one); this surfaces the consent-governance risk that skip leaves uncovered. Review each: a genuine third-party SaaS with Directory.ReadWrite.All is the illicit-consent-grant surface; a Microsoft first-party tool may be acceptable but should still be an explicit decision.",
+      description="An application whose registration lives in ANOTHER tenant (a third-party SaaS or Microsoft-published multi-tenant app) has been admin-consented, for ALL users, to a high-impact delegated Microsoft Graph scope (e.g. Directory.ReadWrite.All, User.ReadWrite.All). Delegated tenant-wide consent lets the external app act with the signed-in user's directory privileges, so when a privileged user signs in, the external service can write to the directory on their behalf. AZ-APP-017 deliberately skips external apps (you cannot add a credential to one); this surfaces the consent-governance risk that skip leaves uncovered. Review each: a genuine third-party SaaS with Directory.ReadWrite.All is the illicit-consent-grant surface; a Microsoft first-party tool may be acceptable but should still be an explicit decision.",
       remediation="Review the tenant-wide admin consent for each external app. Revoke consent that is not required, scope it to specific users/groups instead of AllPrincipals, and establish an admin-consent review workflow so future high-impact delegated grants are governed.",
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1528", "Best Practice": "Consent governance"})
@@ -1567,7 +1771,7 @@ def foreign_dangerous_delegated_grant(g: Graph):
 def _foreign_tenant_wide_data_scopes(sp) -> set[str]:
     """All lowercased Graph DATA scopes an external app holds tenant-wide, from BOTH
     consent mechanisms: delegated grants consented for AllPrincipals, AND application
-    (app-only) permissions - which need no signed-in user and are therefore at least as
+    (app-only) permissions, which need no signed-in user and are therefore at least as
     powerful. e.g. app-only Mail.Read reads every mailbox with the app's own credential."""
     scopes: set[str] = set()
     for gr in (sp.props.get("_delegated_grants") or []):
@@ -1580,7 +1784,7 @@ def _foreign_tenant_wide_data_scopes(sp) -> set[str]:
 @rule(id="AZ-APP-025",
       title="External app has tenant-wide consent to bulk mailbox / file / site / chat data",
       severity=Severity.MEDIUM, category=Category.APPLICATION,
-      description="An application registered in another tenant (third-party SaaS or a Microsoft multi-tenant app) has been admin-consented, for ALL users, to a high-impact Microsoft Graph DATA scope - reading or writing every user's mailbox (Mail.Read/ReadWrite), files (Files.*.All), SharePoint sites (Sites.*.All) or Teams chat (Chat.*) - via delegated AllPrincipals consent and/or an application (app-only) permission. This is the mass-data-exposure/exfiltration surface, distinct from directory escalation (AZ-APP-023): the external service can read or exfiltrate that content across the whole organisation, and an app-only permission needs no signed-in user at all. Low-risk ubiquitous integrations (calendar sync, contacts, mail-send) are deliberately excluded to keep this precise.",
+      description="An application registered in another tenant (third-party SaaS or a Microsoft multi-tenant app) has been admin-consented, for ALL users, to a high-impact Microsoft Graph DATA scope, reading or writing every user's mailbox (Mail.Read/ReadWrite), files (Files.*.All), SharePoint sites (Sites.*.All) or Teams chat (Chat.*), via delegated AllPrincipals consent and/or an application (app-only) permission. This is the mass-data-exposure/exfiltration surface, distinct from directory escalation (AZ-APP-023): the external service can read or exfiltrate that content across the whole organisation, and an app-only permission needs no signed-in user at all. Low-risk ubiquitous integrations (calendar sync, contacts, mail-send) are deliberately excluded to keep this precise.",
       remediation="Review each external app's tenant-wide consent to bulk-data scopes (both delegated AllPrincipals grants and application permissions). Revoke what is not required, scope delegated consent to specific users/groups instead of AllPrincipals, and require admin-consent review for data-plane Graph scopes. Prioritise apps that can read all mail, files or chat.",
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1114", "Best Practice": "Consent governance"})
@@ -1601,7 +1805,7 @@ def foreign_bulk_data_delegated_grant(g: Graph):
 @rule(id="AZ-APP-026",
       title="External app has tenant-wide consent to calendar / contacts / send-as",
       severity=Severity.LOW, category=Category.APPLICATION, best_practice=True,
-      description="An external multi-tenant app has been admin-consented, for ALL users, to a lower-impact but still tenant-wide delegated scope: reading or writing every user's calendar or contacts, sending mail as any user, or reading org meetings/presence. These are the ubiquitous productivity integrations (calendar sync, scheduling, mailers), so the risk is lower than bulk mailbox/file access (AZ-APP-025) - but tenant-wide consent still means the vendor can, e.g., inject meeting invites into every calendar or send mail as staff. This is a consent-governance hygiene item: confirm each integration is sanctioned. Apps that also hold a higher-impact scope are reported under AZ-APP-023/025 instead, not here.",
+      description="An external multi-tenant app has been admin-consented, for ALL users, to a lower-impact but still tenant-wide delegated scope: reading or writing every user's calendar or contacts, sending mail as any user, or reading org meetings/presence. These are the ubiquitous productivity integrations (calendar sync, scheduling, mailers), so the risk is lower than bulk mailbox/file access (AZ-APP-025), but tenant-wide consent still means the vendor can, e.g., inject meeting invites into every calendar or send mail as staff. This is a consent-governance hygiene item: confirm each integration is sanctioned. Apps that also hold a higher-impact scope are reported under AZ-APP-023/025 instead, not here.",
       remediation="Maintain an allow-list of sanctioned productivity integrations. Prefer per-user consent for calendar/contacts add-ins rather than tenant-wide AllPrincipals consent, and periodically review the list of externally-consented apps.",
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1114", "Best Practice": "Consent governance"})
@@ -1640,7 +1844,7 @@ def credential_sprawl(g: Graph):
                  + len(n.props.get("keyCredentials") or []))
         if count >= _THRESHOLD:
             out.append(_ent(g, n.id, credential_count=count,
-                            note=f"{count} credentials on one identity - consolidate and rotate"))
+                            note=f"{count} credentials on one identity, consolidate and rotate"))
     return out
 
 
@@ -1650,7 +1854,7 @@ def credential_sprawl(g: Graph):
       description=(
           "The application's service principal has appRoleAssignmentRequired = false (the default), "
           "meaning any user in the tenant can sign in to it and use its delegated permissions. "
-          "This includes ex-employees whose accounts have not been disabled - they retain access "
+          "This includes ex-employees whose accounts have not been disabled, they retain access "
           "to the app and anything it can reach on their behalf. For apps with powerful delegated "
           "Graph permissions (Mail, Files, Directory) this is an exfiltration and persistence risk."
       ),
@@ -1665,7 +1869,7 @@ def credential_sprawl(g: Graph):
 def sp_no_assignment_required(g: Graph):
     """Flag Application-type SPs where any user can sign in (appRoleAssignmentRequired != true)
     AND the SP has meaningful permissions or credentials that make unrestricted access risky."""
-    # Dangerous Graph delegated/application scope keywords - a subset that matters for this rule.
+    # Dangerous Graph delegated/application scope keywords, a subset that matters for this rule.
     _SENSITIVE_SCOPES = {
         "mail.read", "mail.readwrite", "mail.send",
         "files.read", "files.readwrite", "files.readwrite.all",
@@ -1678,7 +1882,7 @@ def sp_no_assignment_required(g: Graph):
     }
     out = []
     for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
-        # Only custom/enterprise apps - skip managed identities and foreign-tenant SPs
+        # Only custom/enterprise apps, skip managed identities and foreign-tenant SPs
         if sp.props.get("servicePrincipalType") == "ManagedIdentity":
             continue
         if "foreign_tenant" in sp.tags:
@@ -1686,12 +1890,12 @@ def sp_no_assignment_required(g: Graph):
         # Skip if assignment is already required
         if sp.props.get("appRoleAssignmentRequired") is True:
             continue
-        # Skip if no live credentials AND no dangerous permissions - low risk
+        # Skip if no live credentials AND no dangerous permissions, low risk
         cred_count = (len(sp.props.get("passwordCredentials") or []) +
                       len(sp.props.get("keyCredentials") or []))
         has_creds = cred_count > 0
         # appRoles here are permissions GRANTED TO the SP via AZAppRoleAssignment records
-        # (not the roles it exposes - those live on the resource SP, not the principal SP)
+        # (not the roles it exposes, those live on the resource SP, not the principal SP)
         app_roles = {
             (r.get("value") or "").lower()
             for r in (sp.props.get("_granted_app_roles") or [])
@@ -1709,7 +1913,7 @@ def sp_no_assignment_required(g: Graph):
                         assignment_required=False,
                         credential_count=cred_count,
                         sensitive_scopes=dangerous_scopes[:5] or None))
-    # Cap at 30 to avoid an unactionable bulk list - most-dangerous first (privileged/tier0 first)
+    # Cap at 30 to avoid an unactionable bulk list, most-dangerous first (privileged/tier0 first)
     out.sort(key=lambda e: (
         0 if g.node(e.id) and ("tier0" in (g.node(e.id).tags or set()) or "privileged" in (g.node(e.id).tags or set())) else 1,
         0 if g.node(e.id) and "dangerous_app_role" in (g.node(e.id).tags or set()) else 1,
@@ -1722,7 +1926,7 @@ def sp_no_assignment_required(g: Graph):
       severity=Severity.MEDIUM, category=Category.APPLICATION,
       description=(
           "Two or more DISTINCT applications (different appIds) share the same display name. "
-          "Duplicate registrations are almost always unintended - a re-created or copy-pasted app - "
+          "Duplicate registrations are almost always unintended, a re-created or copy-pasted app, "
           "and each carries its own credentials and consented permissions. They evade review (an admin "
           "auditing 'Synology Active Backup for M365' sees one entry, not four), and any single duplicate "
           "can hold a dangerous Graph permission or a live secret the others lack, giving an attacker a "
@@ -1739,13 +1943,13 @@ def sp_no_assignment_required(g: Graph):
                   "Best Practice": "Application inventory hygiene"})
 def duplicate_app_registrations(g: Graph):
     """Flag a display name shared by two or more DISTINCT applications where the duplicate set
-    carries real risk - at least one duplicate holds a live credential or a dangerous Graph
+    carries real risk, at least one duplicate holds a live credential or a dangerous Graph
     permission. The risk filter is what makes this signal, not noise: without it, benign
     auto-provisioned first-party apps (Microsoft Copilot Studio / Dynamics 365 agents, which
     legitimately register many same-named instances) dominate the result.
 
     An application is identified by appId (client id), so its app registration and its own
-    service principal - sharing one appId - aggregate to ONE logical app, never a false
+    service principal, sharing one appId, aggregate to ONE logical app, never a false
     duplicate. Managed identities and foreign-tenant SPs are excluded: they share names across
     tenants by design. Credentials and dangerous-permission tags are read across BOTH the app
     and its SP, since a granted Graph app role is tagged on the SP while secrets may sit on
@@ -1802,7 +2006,7 @@ def duplicate_app_registrations(g: Graph):
           "which trusts every repository in a GitHub org rather than one repo), and a CROSS-TENANT "
           "Entra issuer (the credential trusts an Entra tenant that is not this one, so an identity in "
           "a foreign directory can mint tokens for this application). Either lets a party the tenant "
-          "does not control obtain tokens as this identity - with no stored secret to rotate or detect. "
+          "does not control obtain tokens as this identity, with no stored secret to rotate or detect. "
           "Distinct from AZ-APP-008, which flags any federation on an already-privileged identity; this "
           "flags the over-broad TRUST itself, on any identity, because a broad trust is a foothold "
           "regardless of the identity's current privilege."
@@ -1851,8 +2055,8 @@ def broad_federated_trust(g: Graph):
       title="External (multi-tenant) third-party app holds high-impact Graph permissions",
       severity=Severity.HIGH, category=Category.APPLICATION,
       description=(
-          "A service principal that belongs to a FOREIGN Entra tenant - a third-party SaaS vendor's "
-          "multi-tenant application consented into this tenant - holds a high-impact Microsoft Graph "
+          "A service principal that belongs to a FOREIGN Entra tenant, a third-party SaaS vendor's "
+          "multi-tenant application consented into this tenant, holds a high-impact Microsoft Graph "
           "APPLICATION permission such as Directory.ReadWrite.All, Mail.ReadWrite.All, Files.ReadWrite.All "
           "or Sites.ReadWrite.All. Application permissions apply tenant-wide and need no user present, so "
           "the vendor (or anyone who compromises the vendor) can read or write the corresponding data "
@@ -1890,7 +2094,7 @@ def external_app_high_impact_perms(g: Graph):
           "accumulation violates least privilege: the union of many roles' permissions is far larger than "
           "any one job needs, the account becomes a high-value single point of compromise, and standing "
           "assignments (rather than just-in-time PIM activation) mean every one of those privileges is "
-          "always live. Role sprawl also defeats review - nobody can reason about what a 13-role account "
+          "always live. Role sprawl also defeats review, nobody can reason about what a 13-role account "
           "can actually do."
       ),
       remediation=(
@@ -1953,8 +2157,8 @@ def cross_subscription_high_privilege(g: Graph):
       description=(
           "One user-assigned managed identity is attached to three or more resources AND holds a "
           "privileged Azure RBAC role (Owner, Contributor or User Access Administrator). Because the same "
-          "identity is shared, code execution on ANY one of those resources - a single vulnerable VM, "
-          "function, or AKS workload - yields that privileged role via IMDS, and therefore access to "
+          "identity is shared, code execution on ANY one of those resources, a single vulnerable VM, "
+          "function, or AKS workload, yields that privileged role via IMDS, and therefore access to "
           "everything the identity can reach. Sharing collapses the blast radius of every host onto one "
           "identity: the weakest resource in the set defines the security of all of them."
       ),
@@ -1996,13 +2200,13 @@ def shared_privileged_managed_identity(g: Graph):
       description=(
           "A DISABLED account is still eligible to self-activate a Tier-0 directory role (e.g. Global "
           "Administrator) through Privileged Identity Management. Disabling the account was meant to remove "
-          "its access, but the standing PIM eligibility survives: if the account is ever re-enabled - an "
-          "offboarding reversal, a helpdesk mistake, or an attacker who takes over the identity - it is one "
+          "its access, but the standing PIM eligibility survives: if the account is ever re-enabled, an "
+          "offboarding reversal, a helpdesk mistake, or an attacker who takes over the identity, it is one "
           "PIM activation away from Tier-0. It is invisible to an active-roles-only review AND to a "
           "'disabled accounts have no access' assumption, making it a silent persistence path."
       ),
       remediation=(
-          "Remove all PIM eligibility from disabled accounts as part of offboarding - disabling is not "
+          "Remove all PIM eligibility from disabled accounts as part of offboarding, disabling is not "
           "enough. Delete the account once retention requirements allow, and audit PIM eligible assignments "
           "against account state so a disabled principal can never retain a Tier-0 activation path."
       ),
@@ -2021,7 +2225,7 @@ def disabled_retains_pim_eligibility(g: Graph):
           "A Tier-0 directory role's Privileged Identity Management activation policy is weak: an eligible "
           "principal can activate the role WITHOUT multi-factor authentication, and/or an eligible "
           "assignment is allowed to be PERMANENT (never expires). PIM's protection is only as strong as its "
-          "activation rules - if activating Global Administrator needs no MFA, a single stolen password "
+          "activation rules, if activating Global Administrator needs no MFA, a single stolen password "
           "yields Tier-0 on demand, and permanent eligibility means the shadow-admin path never lapses. "
           "These gaps are invisible to assignment data alone; they live in the role-management policy."
       ),
@@ -2063,12 +2267,12 @@ def weak_pim_activation_policy(g: Graph):
       title="Data-plane RBAC role granted at subscription / management-group scope",
       severity=Severity.HIGH, category=Category.RBAC,
       description=(
-          "A principal holds an Azure DATA-plane role - such as Storage Blob Data Contributor/Owner/"
+          "A principal holds an Azure DATA-plane role, such as Storage Blob Data Contributor/Owner/"
           "Reader, Storage Account Key Operator, or Key Vault Administrator / Secrets Officer / Secrets "
-          "User - at subscription or management-group scope. Data-plane roles grant direct access to the "
+          "User, at subscription or management-group scope. Data-plane roles grant direct access to the "
           "DATA inside resources (blobs, queues, Key Vault secrets/keys), bypassing the control-plane "
           "checks that Owner/Contributor findings focus on. Granted at subscription or MG scope, one "
-          "assignment reaches the data in EVERY storage account or vault beneath it - e.g. Key Vault "
+          "assignment reaches the data in EVERY storage account or vault beneath it, e.g. Key Vault "
           "Secrets User at subscription scope reads every secret in every vault in the subscription. This "
           "is exactly the reach that turns a single compromised principal into mass data exfiltration."
       ),
@@ -2106,7 +2310,7 @@ def data_plane_role_broad_scope(g: Graph):
       severity=Severity.HIGH, category=Category.GROUP,
       description=(
           "A group holds Owner or User Access Administrator on a subscription or management group, so "
-          "EVERY member of the group inherits a self-escalating role - each can assign themselves any RBAC "
+          "EVERY member of the group inherits a self-escalating role, each can assign themselves any RBAC "
           "role across that scope. The risk scales with membership: a large group turns a self-escalation "
           "primitive into a wide, hard-to-review attack surface, and adding a member (often a lighter-"
           "touch action than a direct role assignment) silently grants full control. Distinct from the "
@@ -2175,13 +2379,13 @@ def group_confers_kv_access(g: Graph):
       title="Ownerless privileged service principal (dangerous Graph permission or Tier-0)",
       severity=Severity.HIGH, category=Category.APPLICATION,
       description=(
-          "A service principal with NO assigned owner is privileged - either it holds a high-impact "
+          "A service principal with NO assigned owner is privileged, either it holds a high-impact "
           "Microsoft Graph application permission (e.g. Directory.ReadWrite.All, "
           "RoleManagement.ReadWrite.Directory, Group.ReadWrite.All, Mail.ReadWrite.All), OR it is "
           "Tier-0 by another mechanism (commonly User Access Administrator / Owner at subscription "
           "scope via Azure RBAC). Ownerless means no one is accountable for the "
           "identity: its credentials go un-rotated, its permissions un-reviewed, and its compromise "
-          "un-noticed - yet it wields a permission that can escalate privilege or exfiltrate data "
+          "un-noticed, yet it wields a permission that can escalate privilege or exfiltrate data "
           "tenant-wide. Combining no accountability with high privilege is precisely the forgotten, "
           "over-powered identity attackers look for. Distinct from AZ-APP-002 (any SP with the permission) "
           "and AZ-HYG-004 (any ownerless app): this is the dangerous intersection of the two."
@@ -2251,11 +2455,11 @@ def classic_admins(g: Graph):
 
 
 # --------------------------------------------------------------------------- #
-# v2 Phase 1 - resource-configuration depth (grounded in AzureHound-collected
+# v2 Phase 1, resource-configuration depth (grounded in AzureHound-collected
 # resource properties). Storage accounts carry the richest config, so the first
 # batch deepens Storage beyond the existing anonymous-blob / shared-key / key-
 # retrieval rules. Every rule distinguishes a confirmed misconfiguration from a
-# property AzureHound never collected - claiming a finding from absent data is
+# property AzureHound never collected, claiming a finding from absent data is
 # exactly what the quality guardrails forbid.
 # --------------------------------------------------------------------------- #
 def _stor_props(s):
@@ -2276,7 +2480,7 @@ def storage_weak_tls(g: Graph):
         if isinstance(val, str) and val.upper() in ("TLS1_0", "TLS1_1"):
             out.append(_ent(g, s.id, subscription=_subscription_for(g, s.id),
                             minimumTlsVersion=val, confirmed=True,
-                            note=f"accepts {val.replace('_', ' ')} - below TLS 1.2"))
+                            note=f"accepts {val.replace('_', ' ')}, below TLS 1.2"))
     return out
 
 
@@ -2294,7 +2498,7 @@ def storage_no_https_only(g: Graph):
         if val is False:
             out.append(_ent(g, s.id, subscription=_subscription_for(g, s.id),
                             supportsHttpsTrafficOnly=val, confirmed=True,
-                            note="secure transfer not required - plaintext HTTP accepted"))
+                            note="secure transfer not required, plaintext HTTP accepted"))
     return out
 
 
@@ -2313,7 +2517,7 @@ def storage_network_open(g: Graph):
         if action is not None and str(action).lower() == "allow":
             out.append(_ent(g, s.id, subscription=_subscription_for(g, s.id),
                             networkAcls_defaultAction=action, confirmed=True,
-                            note="defaultAction=Allow - reachable from any network"))
+                            note="defaultAction=Allow, reachable from any network"))
     return out
 
 
@@ -2330,7 +2534,7 @@ def storage_no_private_endpoint(g: Graph):
     for s in g.nodes_of_kind(NodeKind.STORAGE):
         props = _stor_props(s)
         if "privateEndpointConnections" not in props:
-            continue  # not collected - say nothing rather than guess
+            continue  # not collected, say nothing rather than guess
         pe = props.get("privateEndpointConnections") or []
         acls = props.get("networkAcls") or {}
         denied = str(acls.get("defaultAction") or "").lower() == "deny"
@@ -2342,7 +2546,7 @@ def storage_no_private_endpoint(g: Graph):
 
 
 # --------------------------------------------------------------------------- #
-# v2 Phase 1 batch 2 - Key Vault configuration depth (515 vaults collected with
+# v2 Phase 1 batch 2, Key Vault configuration depth (515 vaults collected with
 # rich config). Complements the existing KV-001..006 (data-plane breadth, legacy
 # access policies, crypto ops, purge protection, network).
 # --------------------------------------------------------------------------- #
@@ -2352,7 +2556,7 @@ def _kv_props(kv):
 
 @rule(id="AZ-KV-007", title="Key Vault is enabled for VM deployment (secrets reachable from compute)",
       severity=Severity.MEDIUM, category=Category.KEYVAULT,
-      description="enabledForDeployment is true, so Azure VMs in the subscription can retrieve the vault's certificates and secrets as part of deployment - without an explicit Key Vault RBAC or access-policy grant. Any principal that can create or control a VM in the subscription can therefore reach the vault's material.",
+      description="enabledForDeployment is true, so Azure VMs in the subscription can retrieve the vault's certificates and secrets as part of deployment, without an explicit Key Vault RBAC or access-policy grant. Any principal that can create or control a VM in the subscription can therefore reach the vault's material.",
       remediation="Set enabledForDeployment=false unless a specific VM deployment genuinely needs it, and grant per-workload access through RBAC/access policies instead.",
       data_source=[NodeKind.KEY_VAULT],
       frameworks={"CIS Azure": "8.x", "MITRE ATT&CK": "T1552.001"},
@@ -2370,7 +2574,7 @@ def kv_enabled_for_deployment(g: Graph):
 
 @rule(id="AZ-KV-008", title="Key Vault soft-delete retention is short",
       severity=Severity.LOW, category=Category.KEYVAULT, best_practice=True,
-      description="softDeleteRetentionInDays is below 90. A short retention window shrinks the time available to recover secrets, keys and certificates that are deleted maliciously or accidentally - reducing resilience against a destructive attacker or a mistaken purge.",
+      description="softDeleteRetentionInDays is below 90. A short retention window shrinks the time available to recover secrets, keys and certificates that are deleted maliciously or accidentally, reducing resilience against a destructive attacker or a mistaken purge.",
       remediation="Set softDeleteRetentionInDays to 90 and enable purge protection so deletions cannot be fast-tracked.",
       data_source=[NodeKind.KEY_VAULT],
       frameworks={"CIS Azure": "8.x", "Best Practice": "Recoverability"},
@@ -2383,7 +2587,7 @@ def kv_short_soft_delete(g: Graph):
         if isinstance(days, int) and days < 90:
             out.append(_ent(g, kv.id, subscription=_subscription_for(g, kv.id),
                             softDeleteRetentionInDays=days, confirmed=True,
-                            note=f"retention {days} days - below the 90-day maximum"))
+                            note=f"retention {days} days, below the 90-day maximum"))
     return out
 
 
@@ -2412,7 +2616,7 @@ def kv_no_private_endpoint(g: Graph):
 
 
 # --------------------------------------------------------------------------- #
-# v2 Phase 1 batch 3 - VM security posture (securityProfile is collected).
+# v2 Phase 1 batch 3, VM security posture (securityProfile is collected).
 # --------------------------------------------------------------------------- #
 @rule(id="AZ-VM-001", title="Virtual machine does not use Trusted Launch",
       severity=Severity.LOW, category=Category.COMPUTE, best_practice=True,
@@ -2428,22 +2632,22 @@ def vm_no_trusted_launch(g: Graph):
         props = vm.props.get("properties") or vm.props
         sp = props.get("securityProfile")
         if not isinstance(sp, dict):
-            continue  # securityProfile not collected - no claim
+            continue  # securityProfile not collected, no claim
         stype = sp.get("securityType")
         if str(stype or "").lower() != "trustedlaunch":
             out.append(_ent(g, vm.id, subscription=_subscription_for(g, vm.id),
                             securityType=(stype or "Standard"), confirmed=True,
-                            note="not a Trusted Launch VM - no Secure Boot / vTPM"))
+                            note="not a Trusted Launch VM, no Secure Boot / vTPM"))
     return out
 
 
 # --------------------------------------------------------------------------- #
-# v2 Phase 1 batch 4 - data-exfil / deployment-secret exposure and app entry
+# v2 Phase 1 batch 4, data-exfil / deployment-secret exposure and app entry
 # points (all grounded in collected properties).
 # --------------------------------------------------------------------------- #
 @rule(id="AZ-STOR-009", title="Storage account allows cross-tenant object replication",
       severity=Severity.MEDIUM, category=Category.STORAGE,
-      description="allowCrossTenantReplication is true, so object-replication rules can copy this account's blobs to a storage account in a DIFFERENT Entra tenant. An attacker with write access to replication policy - or an insider - can use it as a sanctioned data-exfiltration channel that leaves the tenant boundary.",
+      description="allowCrossTenantReplication is true, so object-replication rules can copy this account's blobs to a storage account in a DIFFERENT Entra tenant. An attacker with write access to replication policy, or an insider, can use it as a sanctioned data-exfiltration channel that leaves the tenant boundary.",
       remediation="Set allowCrossTenantReplication=false unless a cross-tenant replication scenario is explicitly required and reviewed.",
       data_source=[NodeKind.STORAGE],
       frameworks={"CIS Azure": "3.x", "MITRE ATT&CK": "T1537"},
@@ -2455,13 +2659,13 @@ def storage_cross_tenant_replication(g: Graph):
         if _stor_props(s).get("allowCrossTenantReplication") is True:
             out.append(_ent(g, s.id, subscription=_subscription_for(g, s.id),
                             allowCrossTenantReplication=True, confirmed=True,
-                            note="cross-tenant object replication permitted - data can leave the tenant"))
+                            note="cross-tenant object replication permitted, data can leave the tenant"))
     return out
 
 
 @rule(id="AZ-KV-010", title="Key Vault is enabled for ARM template deployment (secrets reachable from templates)",
       severity=Severity.MEDIUM, category=Category.KEYVAULT,
-      description="enabledForTemplateDeployment is true, so Azure Resource Manager can read the vault's secrets during a template deployment - without an explicit Key Vault RBAC or access-policy grant. Any principal that can deploy an ARM/Bicep template referencing the vault can extract its secrets.",
+      description="enabledForTemplateDeployment is true, so Azure Resource Manager can read the vault's secrets during a template deployment, without an explicit Key Vault RBAC or access-policy grant. Any principal that can deploy an ARM/Bicep template referencing the vault can extract its secrets.",
       remediation="Set enabledForTemplateDeployment=false unless a specific deployment requires it, and pass secrets to deployments through a scoped, audited mechanism instead.",
       data_source=[NodeKind.KEY_VAULT],
       frameworks={"CIS Azure": "8.x", "MITRE ATT&CK": "T1552.001"},
@@ -2481,7 +2685,7 @@ def kv_enabled_for_template(g: Graph):
       severity=Severity.HIGH, category=Category.KEYVAULT,
       description="A Key Vault using the access-policy model grants data-plane permissions "
                   "(secrets, keys or certificates) to a guest (external / B2B) identity. Vault "
-                  "contents are exposed to an account governed by another organisation - outside "
+                  "contents are exposed to an account governed by another organisation, outside "
                   "this tenant's lifecycle, credential and conditional-access controls. If that "
                   "external identity or its home tenant is compromised, so are the vault's secrets. "
                   "Access-policy grants are invisible to the Azure RBAC guest-role check, so this "
@@ -2513,7 +2717,7 @@ def kv_guest_access(g: Graph):
 
 @rule(id="AZ-LOGIC-001", title="Internet-triggered Logic App carries a managed identity",
       severity=Severity.MEDIUM, category=Category.COMPUTE,
-      description="The workflow has a Request (manual/HTTP) trigger, so it exposes an externally reachable HTTPS callback endpoint, AND it carries a managed identity. A caller who obtains the callback URL (or exploits weak SAS/authorization on it) can drive the workflow's actions - and its managed identity's Azure permissions - from outside the tenant. An HTTP-triggered workflow with no identity is a far lower concern and is not flagged.",
+      description="The workflow has a Request (manual/HTTP) trigger, so it exposes an externally reachable HTTPS callback endpoint, AND it carries a managed identity. A caller who obtains the callback URL (or exploits weak SAS/authorization on it) can drive the workflow's actions, and its managed identity's Azure permissions, from outside the tenant. An HTTP-triggered workflow with no identity is a far lower concern and is not flagged.",
       remediation="Restrict the trigger with IP ranges and strong SAS/authorization, front it with API Management or a gateway, and ensure the managed identity the workflow uses is least-privilege.",
       data_source=[NodeKind.LOGIC_APP],
       frameworks={"MITRE ATT&CK": "T1190", "Best Practice": "External entry point"},
@@ -2541,14 +2745,14 @@ def logicapp_http_trigger(g: Graph):
 
 
 # --------------------------------------------------------------------------- #
-# v2 Phase 1 batch 5 - apex-scope, nested-privilege, external/stale ownership,
+# v2 Phase 1 batch 5, apex-scope, nested-privilege, external/stale ownership,
 # and self-join misconfigurations (all grounded in collected graph structure).
 # --------------------------------------------------------------------------- #
 @rule(id="AZ-RBAC-016", title="Privileged role assigned at the tenant-root management group",
       severity=Severity.CRITICAL, category=Category.RBAC,
       description="A principal holds a write-capable role (Owner, Contributor, User Access "
                   "Administrator, RBAC Administrator, or a custom role) at the TENANT-ROOT management "
-                  "group - the apex Azure scope. A role here is inherited by every management group, "
+                  "group, the apex Azure scope. A role here is inherited by every management group, "
                   "subscription, resource group and resource in the tenant, so it is effectively "
                   "whole-tenant control. This is the single broadest blast radius in Azure RBAC and "
                   "should be held by no standing principal.",
@@ -2596,7 +2800,7 @@ def group_nested_in_tier0(g: Graph):
             members = sum(1 for _ in g.in_edges(child.id, EdgeType.MEMBER_OF))
             out.append(_ent(g, child.id, nested_in=parent.name, nested_in_id=parent.id,
                             member_count=members,
-                            note=(f"nested inside Tier-0 group '{parent.name}' - its {members} "
+                            note=(f"nested inside Tier-0 group '{parent.name}', its {members} "
                                   f"member(s) inherit Tier-0")))
     return out
 
@@ -2604,7 +2808,7 @@ def group_nested_in_tier0(g: Graph):
 @rule(id="AZ-GRP-008", title="Privileged dynamic group keyed on a user-settable attribute (self-join)",
       severity=Severity.HIGH, category=Category.GROUP,
       description="A privileged group (Tier-0, role-assignable, or holding a role) uses DYNAMIC "
-                  "membership whose rule keys on a user-settable attribute - display name, mail, "
+                  "membership whose rule keys on a user-settable attribute, display name, mail, "
                   "other-mails, job title, department, city, country, and similar. A user who can "
                   "edit that attribute on their own profile can make themselves match the rule and "
                   "self-join the group, inheriting its privilege with no admin action.",
@@ -2629,7 +2833,7 @@ def dynamic_group_self_join(g: Graph):
         matched = sorted({a for a in _USER_CTRL if ("user." + a) in rule})
         if matched:
             out.append(_ent(g, n.id, membership_attributes=matched,
-                            note="privileged dynamic group keyed on user-settable attribute(s) - self-join risk"))
+                            note="privileged dynamic group keyed on user-settable attribute(s), self-join risk"))
     return out
 
 
@@ -2637,7 +2841,7 @@ def dynamic_group_self_join(g: Graph):
       severity=Severity.HIGH, category=Category.GROUP,
       description="A group synchronised from on-premises Active Directory (onPremisesSyncEnabled) is "
                   "role-assignable and/or already confers a Tier-0 directory or Azure role. Its "
-                  "membership is mastered in on-prem AD, not Entra - so anyone who can edit that AD "
+                  "membership is mastered in on-prem AD, not Entra, so anyone who can edit that AD "
                   "group, or who compromises on-prem AD / AD Connect, silently gains the cloud "
                   "privilege. This bridges an on-premises compromise straight into Entra Tier-0, "
                   "outside cloud PIM, MFA and conditional-access controls.",
@@ -2660,7 +2864,7 @@ def synced_privileged_group(g: Graph):
         out.append(_ent(g, n.id, synced_from_on_prem=True,
                         role_assignable=("role_assignable" in n.tags),
                         confers_tier0=("tier0" in n.tags),
-                        note="on-prem-synced group holds/eligible for a privileged role - hybrid bridge"))
+                        note="on-prem-synced group holds/eligible for a privileged role, hybrid bridge"))
     return out
 
 
@@ -2668,10 +2872,10 @@ def synced_privileged_group(g: Graph):
       severity=Severity.HIGH, category=Category.GROUP,
       description="A Microsoft 365 group with Public visibility confers a Tier-0 or Azure/directory "
                   "role. Any member of the organisation can join a Public group themselves, without "
-                  "owner approval - so anyone can self-join and inherit whatever privilege the group "
+                  "owner approval, so anyone can self-join and inherit whatever privilege the group "
                   "carries. Privilege must never sit behind a self-service, publicly-joinable group.",
       remediation="Set the group's visibility to Private (owner-approved membership) or, better, do "
-                  "not confer privilege through a Microsoft 365 group at all - use a security / "
+                  "not confer privilege through a Microsoft 365 group at all, use a security / "
                   "role-assignable group with assigned membership under PIM.",
       data_source=[NodeKind.GROUP],
       frameworks={"MITRE ATT&CK": "T1098"})
@@ -2694,7 +2898,7 @@ def public_privileged_group(g: Graph):
       severity=Severity.HIGH, category=Category.APPLICATION,
       description="A guest (external / B2B) user is an owner of an application registration or "
                   "service principal. An owner can add a credential (client secret or certificate) "
-                  "to the app and then authenticate AS it - so an external identity governed by "
+                  "to the app and then authenticate AS it, so an external identity governed by "
                   "another organisation can take over the app and everything it can reach. This "
                   "crosses the external-to-internal trust boundary through app ownership.",
       remediation="Remove guest owners from all application registrations and service principals. "
@@ -2723,7 +2927,7 @@ def guest_owns_app(g: Graph):
       description="A disabled user account is an owner of an application or service principal. The "
                   "app has no active accountable owner, and if the account is re-enabled (or "
                   "compromised through a residual path) it immediately regains the ability to add a "
-                  "credential and authenticate as the app - a stale-governance and latent-takeover "
+                  "credential and authenticate as the app, a stale-governance and latent-takeover "
                   "risk.",
       remediation="Reassign ownership to an active, accountable cloud-only owner, or decommission "
                   "the app. Remove disabled accounts from all application/service-principal ownership.",
@@ -2741,15 +2945,15 @@ def disabled_owns_app(g: Graph):
             if owner.name not in seen[target.id]:
                 seen[target.id].append(owner.name)
     return [_ent(g, tid, disabled_owners=owners,
-                 note=f"disabled owner(s) {', '.join(owners)} - no active accountable owner")
+                 note=f"disabled owner(s) {', '.join(owners)}, no active accountable owner")
             for tid, owners in seen.items()]
 
 
 # --------------------------------------------------------------------------- #
-# v2 Phase 1 batch 6 - IMPACT tactic (destruction / ransomware / resource
+# v2 Phase 1 batch 6, IMPACT tactic (destruction / ransomware / resource
 # hijacking / account access removal) and Discovery (estate-wide recon). These
 # are capabilities distinct from privilege ESCALATION: a Contributor cannot grant
-# itself a role, but it CAN wipe or ransom the subscription - a different, equally
+# itself a role, but it CAN wipe or ransom the subscription, a different, equally
 # severe outcome the escalation rules do not surface.
 # --------------------------------------------------------------------------- #
 # NOTE: a former AZ-RBAC-018 ("broad-scope Contributor → destruction") was removed as a
@@ -2757,13 +2961,13 @@ def disabled_owns_app(g: Graph):
 # broad-scope Contributor principals. The data-destruction / ransomware IMPACT lens it
 # added is preserved by mapping AZ-RBAC-003 to T1485 + the Impact tactic (see the
 # framework-enrichment table and AZ-RBAC-003's knowledge entry).
-@rule(id="AZ-RBAC-017", title="Reader at management-group scope - full-estate reconnaissance surface",
+@rule(id="AZ-RBAC-017", title="Reader at management-group scope, full-estate reconnaissance surface",
       severity=Severity.LOW, category=Category.RBAC, best_practice=True,
       description="A principal holds Reader at management-group scope, so it can enumerate every "
                   "subscription, resource, configuration and role assignment beneath that management "
                   "group. Reader cannot change anything, but compromise of such a principal hands an "
-                  "attacker a complete, authenticated map of the estate - network layout, resource "
-                  "inventory, identities, and where the crown jewels are - which is the reconnaissance "
+                  "attacker a complete, authenticated map of the estate, network layout, resource "
+                  "inventory, identities, and where the crown jewels are, which is the reconnaissance "
                   "that precedes every targeted attack. Broad read is routinely over-granted to "
                   "monitoring and automation and rarely reviewed.",
       remediation="Scope read access to the specific management groups or subscriptions each workload "
@@ -2784,7 +2988,7 @@ def reader_at_mg(g: Graph):
 @rule(id="AZ-IDENT-018", title="Principal can reset or disable accounts tenant-wide (mass lockout / takeover)",
       severity=Severity.HIGH, category=Category.IDENTITY,
       description="A principal effectively holds a role that can reset passwords / replace MFA methods "
-                  "and disable accounts across the tenant - User Administrator, Global Administrator, or "
+                  "and disable accounts across the tenant, User Administrator, Global Administrator, or "
                   "Privileged Authentication Administrator. Beyond the escalation angle (resetting one "
                   "admin), this is a mass-IMPACT capability: the holder can disable or reset EVERY user, "
                   "denying the whole organisation access (an availability / extortion event) or taking "
@@ -2805,12 +3009,12 @@ def mass_account_lockout(g: Graph):
 @rule(id="AZ-APP-028", title="External app holds a dangerous APPLICATION (app-only) Graph permission",
       severity=Severity.HIGH, category=Category.APPLICATION,
       description="A service principal whose app registration lives in ANOTHER tenant holds a "
-                  "high-impact Microsoft Graph APPLICATION (app-only) permission in this tenant - "
+                  "high-impact Microsoft Graph APPLICATION (app-only) permission in this tenant, "
                   "e.g. Directory.ReadWrite.All, RoleManagement.ReadWrite.Directory, Mail.ReadWrite.All, "
                   "Files/Sites.ReadWrite.All. Application permissions need NO signed-in user: the "
                   "external app authenticates with its own credential (held in its home tenant) and "
                   "acts app-only against your directory or data, tenant-wide, with no user interaction. "
-                  "So a third-party SaaS - or a compromise of it - can write to your directory or "
+                  "So a third-party SaaS, or a compromise of it, can write to your directory or "
                   "read/modify all mail and files, and you hold no credential to revoke, only the "
                   "grant. Distinct from the delegated-consent findings (AZ-APP-023/025), which need a "
                   "user to sign in.",
@@ -2831,7 +3035,7 @@ def foreign_app_only_dangerous(g: Graph):
             out.append(_ent(g, sp.id, permissions=dang[:6],
                             app_owner_tenant=sp.props.get("_owner_org"),
                             note=("external app holds app-only " + ", ".join(dang[:3]) +
-                                  " - acts on your tenant with no signed-in user"
+                                  ", acts on your tenant with no signed-in user"
                                   + (" (critical directory/role write)" if crit else ""))))
     return out
 
@@ -2841,7 +3045,7 @@ def foreign_app_only_dangerous(g: Graph):
       description="The same certificate/key credential (identified by thumbprint / "
                   "customKeyIdentifier) is registered on two or more distinct applications or service "
                   "principals. A single stolen private key then authenticates as ALL of them, so the "
-                  "blast radius of one credential compromise is every identity that shares it - and "
+                  "blast radius of one credential compromise is every identity that shares it, and "
                   "rotating safely means coordinating the change across all of them at once.",
       remediation="Issue a unique credential per application / service principal. Never share a "
                   "certificate or key across identities; rotate any shared credential and re-issue "
@@ -2873,15 +3077,15 @@ def shared_credential(g: Graph):
 
 
 # ── Record dependencies (audit F-03) ──────────────────────────────────────────
-# A rule that reads relationship records must be reported NOT ASSESSED - never a
-# silent clean pass - when those records were not collected. Node presence alone
+# A rule that reads relationship records must be reported NOT ASSESSED, never a
+# silent clean pass, when those records were not collected. Node presence alone
 # cannot distinguish "no dangerous grants exist" from "grant records were never
 # ingested". Annotated post-registration to keep each rule's decorator readable.
 _GRANT_RECORDS = ["AZAppRoleAssignment"]            # MS Graph app-permission grants
 _ROLE_RECORDS = ["AZRoleAssignment"]                # active directory-role assignments
 _ELIGIBLE_RECORDS = ["AZRoleEligibilityScheduleInstance"]   # PIM-eligible roles
 _DELEGATED_RECORDS = ["AZOAuth2GrantDelegated"]     # OAuth2 delegated permission grants
-# Azure (ARM) RBAC assignment records - both the per-resource assignment kinds and the
+# Azure (ARM) RBAC assignment records, both the per-resource assignment kinds and the
 # newer flat edge kinds. A rule that reads HAS_RBAC_ROLE (or an edge derived from it)
 # finds nothing when these were never collected; without this gate that read as a clean
 # pass on the entire resource-plane RBAC domain. Sourced from normalize so the two stay
@@ -2975,7 +3179,7 @@ _FRAMEWORK_ENRICH: dict[str, dict] = {
     "AZ-IDENT-007": {"MITRE ATT&CK": "T1556.007"},
     "AZ-IDENT-011": {_ATRM: "AZT106.1"}, "AZ-IDENT-012": {_ATRM: "AZT106.1"},
     # AZ-IDENT-002 (break-glass sufficiency) is an availability/resilience control, not an
-    # attack technique - it keeps its CIS tag and intentionally has no ATT&CK/ATRM id.
+    # attack technique, it keeps its CIS tag and intentionally has no ATT&CK/ATRM id.
     # ---- Groups ----
     "AZ-GRP-001": {_ATRM: "AZT501.1"},
     "AZ-GRP-003": {_ATRM: "AZT501.1"}, "AZ-GRP-004": {"MITRE ATT&CK": "T1098", _ATRM: "AZT405.3"},

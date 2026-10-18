@@ -12,10 +12,10 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-# Snapshot format version - bump when the node/edge shape changes so stale caches
+# Snapshot format version, bump when the node/edge shape changes so stale caches
 # are transparently rebuilt instead of misread.
 # v2: edges carry weight/why/conditions/evidence; nodes carry value.
-# v3: Tier-0 tightened to the curated high-impact role set - old caches must rebuild.
+# v3: Tier-0 tightened to the curated high-impact role set, old caches must rebuild.
 # v4: RBAC edge keys include the role, so multiple roles at one scope no longer collapse.
 SNAPSHOT_VERSION = 4
 
@@ -99,7 +99,7 @@ class GraphEdge:
     @property
     def key(self) -> str:
         """Stable, unique edge id. A snapshot dedups to one edge per src+type+primitive+target,
-        PLUS the RBAC role - a node can hold several distinct RBAC roles (e.g. Contributor AND
+        PLUS the RBAC role, a node can hold several distinct RBAC roles (e.g. Contributor AND
         User Access Administrator) at the SAME scope, and collapsing those loses the privileged
         one (and its Tier-0 justification)."""
         base = f"{self.source}|{self.type}|{self.primitive or ''}|{self.target}"

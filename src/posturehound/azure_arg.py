@@ -17,7 +17,7 @@ Design:
 
 The curated KQL in ARG_QUERIES targets the v2 priority domains (network exposure,
 data services, resource firewalls). The exact field paths returned by ARG must be
-verified against live output before rules are written on top of them - that is the
+verified against live output before rules are written on top of them, that is the
 Phase 3 step and is why this module returns raw rows rather than findings.
 """
 from __future__ import annotations
@@ -60,7 +60,7 @@ class ArgResult:
         return sum(len(v) for v in self.rows.values())
 
 
-# Curated KQL for the v2 priority domains. Raw rows only - field paths are
+# Curated KQL for the v2 priority domains. Raw rows only, field paths are
 # verified against live ARG before any rule reads them (see module docstring).
 ARG_QUERIES: dict[str, str] = {
     # Network exposure ------------------------------------------------------
@@ -127,6 +127,24 @@ ARG_QUERIES: dict[str, str] = {
         "| project id, name, subscriptionId, "
         "pricingTier = properties.pricingTier"
     ),
+    "defender_autoprovisioning": (
+        "securityresources | where type =~ 'microsoft.security/autoprovisioningsettings' "
+        "| project id, name, subscriptionId, "
+        "autoProvision = tostring(properties.autoProvision)"
+    ),
+    # Subscriptions with NO Defender security contact. The absence is resolved in KQL (a left-join
+    # of every subscription against the security-contacts resource), using only stable `type`
+    # filters, so a schema change to the contact's own fields can never produce a false finding.
+    "defender_security_contacts_missing": (
+        "resourcecontainers | where type =~ 'microsoft.resources/subscriptions' "
+        "| project subscriptionId, subName = name "
+        "| join kind=leftouter (securityresources "
+        "| where type =~ 'microsoft.security/securitycontacts' "
+        "| summarize contacts = count() by subscriptionId) on subscriptionId "
+        "| extend contacts = coalesce(contacts, 0) "
+        "| where contacts == 0 "
+        "| project id = strcat('/subscriptions/', subscriptionId), name = subName, subscriptionId"
+    ),
     # Resource firewalls (config AzureHound does not always carry) -----------
     "app_services_config": (
         "Resources | where type =~ 'microsoft.web/sites' "
@@ -164,7 +182,8 @@ ARG_QUERIES: dict[str, str] = {
         "Resources | where type =~ 'microsoft.compute/disks' "
         "| project id, name, subscriptionId, resourceGroup, "
         "networkAccessPolicy = properties.networkAccessPolicy, "
-        "publicNetworkAccess = properties.publicNetworkAccess"
+        "publicNetworkAccess = properties.publicNetworkAccess, "
+        "encryptionType = tostring(properties.encryption.type)"
     ),
     # Caches, messaging, gateways, AI ---------------------------------------
     "redis_caches": (
@@ -203,7 +222,7 @@ ARG_QUERIES: dict[str, str] = {
 
 
 def _read_dotenv() -> dict:
-    """Parse a `.env` file in the working directory into a dict - no external
+    """Parse a `.env` file in the working directory into a dict, no external
     dependency. The app runs with its cwd at the project root (start.sh cd's there),
     so a project-root `.env` is found; a CLI run finds a `.env` in the directory it is
     run from. Tolerant of blank lines, `#` comments, an optional `export ` prefix, and
@@ -228,15 +247,18 @@ def _read_dotenv() -> dict:
 
 
 def credentials_from_settings() -> "ArgCredentials | None":
-    """Assemble the Reader-SP credentials, in precedence order:
+    """Assemble the Reader-SP credentials, in precedence order (per field):
 
-      1. real environment variables (PH_ARG_TENANT_ID / _CLIENT_ID / _CLIENT_SECRET)
-      2. a .env file (cwd or repo root) - either the PH_ARG_* names OR the standard
+      1. the values stored in Settings, an explicit Settings entry ALWAYS wins, so
+         changing the SP in the UI takes effect immediately and is never shadowed by a
+         stale .env / environment value.
+      2. real environment variables (PH_ARG_TENANT_ID / _CLIENT_ID / _CLIENT_SECRET)
+      3. a .env file (cwd or repo root), either the PH_ARG_* names OR the standard
          Azure names AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET
-      3. the values stored in Settings
 
-    So the secret can live in a git-ignored .env and never be persisted to
-    settings.json. Returns None if no usable credential set is present.
+    So env / .env only supply a field the operator has left blank in Settings; the
+    moment they type a value in Settings, that value is authoritative. Returns None if
+    no usable credential set is present.
     """
     try:
         from . import store
@@ -246,9 +268,9 @@ def credentials_from_settings() -> "ArgCredentials | None":
     env = _read_dotenv()
 
     def _resolve(ph_key, azure_key, settings_key):
-        return (os.environ.get(ph_key)
-                or env.get(ph_key) or env.get(azure_key)
-                or s.get(settings_key) or "").strip()
+        return (s.get(settings_key)
+                or os.environ.get(ph_key)
+                or env.get(ph_key) or env.get(azure_key) or "").strip()
 
     tenant = _resolve("PH_ARG_TENANT_ID", "AZURE_TENANT_ID", "arg_tenant_id")
     client_id = _resolve("PH_ARG_CLIENT_ID", "AZURE_CLIENT_ID", "arg_client_id")
@@ -259,7 +281,7 @@ def credentials_from_settings() -> "ArgCredentials | None":
 
 def _default_client():
     """An httpx client that survives a stale corporate SSL_CERT_FILE, mirroring
-    ai_findings.build_client - a missing bundle path must degrade to system trust,
+    ai_findings.build_client, a missing bundle path must degrade to system trust,
     not crash the collector."""
     import httpx
     cert = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
@@ -355,7 +377,7 @@ def run_query(token: str, kql: str, subscriptions: list[str], client) -> list[di
     Paging is stabilised with an explicit sort. Azure Resource Graph's $skipToken paging
     is only consistent when the query has an `order by`; without one, rows can be silently
     skipped or duplicated across page boundaries, so a tenant with more than one page of a
-    resource type collected a slightly different set each run - making the SAME tenant score
+    resource type collected a slightly different set each run, making the SAME tenant score
     differently scan to scan. Sorting by `id` (every query projects it) makes the collected
     set complete and deterministic. Duplicate rows would collapse in the graph build anyway,
     but a skipped row is unrecoverable, which is what this prevents.
@@ -392,7 +414,7 @@ def run_query(token: str, kql: str, subscriptions: list[str], client) -> list[di
 
 def probe(creds: "ArgCredentials | None" = None, *, client=None) -> dict:
     """Validate the Reader service principal: authenticate and run one trivial
-    ARG count query. Returns {ok, message, subscriptions} - never raises. Used by
+    ARG count query. Returns {ok, message, subscriptions}, never raises. Used by
     the Settings 'Test connection' control so the SP can be set up before a scan."""
     creds = creds or credentials_from_settings()
     if creds is None:
@@ -416,7 +438,7 @@ def probe(creds: "ArgCredentials | None" = None, *, client=None) -> dict:
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "message": f"Authenticated, but the Resource Graph query "
                     f"failed: {e}", "subscriptions": len(subs)}
-        return {"ok": True, "message": f"Connected - {len(subs)} subscription(s) readable via "
+        return {"ok": True, "message": f"Connected, {len(subs)} subscription(s) readable via "
                 "Azure Resource Graph.", "subscriptions": len(subs)}
     finally:
         if owns:
@@ -448,7 +470,7 @@ def collect(creds: "ArgCredentials | None" = None, *, client=None,
         try:
             _log("[ARG] Authenticating the Reader service principal…")
             token = get_token(creds, client)
-        except Exception as e:  # noqa: BLE001 - surface, never crash the scan
+        except Exception as e:  # noqa: BLE001, surface, never crash the scan
             result.errors.append(f"authentication failed: {type(e).__name__}: {e}")
             return result
         try:
@@ -495,9 +517,35 @@ _RESOURCE_TYPE_KIND: dict[str, str] = {
     "microsoft.compute/virtualmachinescalesets":    "AZVMScaleSet",
 }
 
-# One Resource Graph query pulls every resource-object we model. Only the identity object
-# and the specific config fields the rules read are projected, to keep payloads bounded
-# (full VM/AKS `properties` blobs are large and unused).
+# The resource-config properties the deterministic rules read, each `requires_props`-gated:
+# a rule that reads one of these is reported "not assessed" unless the collection carries it,
+# so EVERY field a KV/Storage/VM rule depends on must be projected here or that rule can never
+# fire on a live-SP scan. (alias, property-name), alias is "p_" + the ARM property name.
+# `accessPolicies` is handled separately (emitted as AZKeyVaultAccessPolicy records, not props).
+_RESOURCE_PROP_FIELDS: tuple[tuple[str, str], ...] = (
+    # Key Vault config
+    ("p_enableRbacAuthorization", "enableRbacAuthorization"),
+    ("p_enablePurgeProtection", "enablePurgeProtection"),
+    ("p_enableSoftDelete", "enableSoftDelete"),
+    ("p_softDeleteRetentionInDays", "softDeleteRetentionInDays"),
+    ("p_enabledForDeployment", "enabledForDeployment"),
+    ("p_enabledForTemplateDeployment", "enabledForTemplateDeployment"),
+    # Storage config
+    ("p_allowBlobPublicAccess", "allowBlobPublicAccess"),
+    ("p_allowSharedKeyAccess", "allowSharedKeyAccess"),
+    ("p_minimumTlsVersion", "minimumTlsVersion"),
+    ("p_supportsHttpsTrafficOnly", "supportsHttpsTrafficOnly"),
+    ("p_allowCrossTenantReplication", "allowCrossTenantReplication"),
+    # Firewall + private endpoints (both Key Vault and Storage)
+    ("p_networkAcls", "networkAcls"),
+    ("p_privateEndpointConnections", "privateEndpointConnections"),
+    # Virtual-machine security posture (Trusted Launch)
+    ("p_securityProfile", "securityProfile"),
+)
+
+# One Resource Graph query pulls every resource-object we model. Only the identity object,
+# Key Vault access policies, and the specific config fields the rules read are projected, to
+# keep payloads bounded (full VM/AKS `properties` blobs are large and mostly unused).
 _RESOURCE_OBJECTS_KQL = (
     "resources "
     "| where type in~ ("
@@ -507,11 +555,10 @@ _RESOURCE_OBJECTS_KQL = (
     "'microsoft.web/sites','microsoft.logic/workflows',"
     "'microsoft.compute/virtualmachinescalesets') "
     "| project id, name, type, kind, subscriptionId, resourceGroup, identity, "
-    "p_enableRbacAuthorization = properties.enableRbacAuthorization, "
-    "p_enablePurgeProtection = properties.enablePurgeProtection, "
-    "p_enableSoftDelete = properties.enableSoftDelete, "
     "p_accessPolicies = properties.accessPolicies, "
-    "p_allowBlobPublicAccess = properties.allowBlobPublicAccess"
+    # Logic App: only the trigger map is needed (AZ-LOGIC-001), not the whole workflow body.
+    "p_definitionTriggers = properties.definition.triggers, "
+    + ", ".join(f"{alias} = properties.{name}" for alias, name in _RESOURCE_PROP_FIELDS)
 )
 
 
@@ -536,10 +583,7 @@ def resource_objects_to_records(rows: "list[dict]") -> "list[dict]":
         if not kind or not r.get("id"):
             continue
         props: dict = {}
-        for src, dst in (("p_enableRbacAuthorization", "enableRbacAuthorization"),
-                         ("p_enablePurgeProtection", "enablePurgeProtection"),
-                         ("p_enableSoftDelete", "enableSoftDelete"),
-                         ("p_allowBlobPublicAccess", "allowBlobPublicAccess")):
+        for src, dst in _RESOURCE_PROP_FIELDS:
             if r.get(src) is not None:
                 props[dst] = r[src]
         data: dict = {"id": r["id"], "name": r.get("name") or r["id"],
@@ -548,9 +592,19 @@ def resource_objects_to_records(rows: "list[dict]") -> "list[dict]":
         ident = r.get("identity")
         if isinstance(ident, dict) and (ident.get("principalId") or ident.get("userAssignedIdentities")):
             data["identity"] = ident
+        # Logic App workflow triggers, reconstructed into the shape AZ-LOGIC-001 reads.
+        if r.get("p_definitionTriggers") is not None:
+            props["definition"] = {"triggers": r["p_definitionTriggers"]}
         if props:
             data["properties"] = props
         records.append({"kind": kind, "data": data})
+        # Attach the resource under its resource group so the ARM hierarchy
+        # (subscription -> resource group -> resource) is complete for blast-radius and the
+        # attack graph. The RG id is the resource id up to the "/providers/" segment; normalize
+        # already links the RG to its subscription from the AZResourceGroup record.
+        rg_id = r["id"].split("/providers/")[0]
+        if "/resourcegroups/" in rg_id.lower() and rg_id.lower() != r["id"].lower():
+            records.append({"kind": "AZContains", "data": {"parentId": rg_id, "childId": r["id"]}})
         if kind == "AZKeyVault":
             for ap in (r.get("p_accessPolicies") or []):
                 if not isinstance(ap, dict) or not ap.get("objectId"):
@@ -587,7 +641,7 @@ def collect_resource_objects(creds: "ArgCredentials | None" = None, *, client=No
                              on_progress=None) -> "list[dict]":
     """Collect individual Azure resource objects (with managed identities, Key Vault access
     policies and security config) plus resource groups, as AzureHound-shaped records, via
-    Azure Resource Graph. Read-only (Reader). Never raises - auth/query failures are logged
+    Azure Resource Graph. Read-only (Reader). Never raises, auth/query failures are logged
     and yield []."""
     creds = creds or credentials_from_settings()
     if creds is None:
@@ -597,13 +651,13 @@ def collect_resource_objects(creds: "ArgCredentials | None" = None, *, client=No
     try:
         try:
             token = get_token(creds, client)
-        except Exception as e:  # noqa: BLE001 - surface, never crash the scan
+        except Exception as e:  # noqa: BLE001, surface, never crash the scan
             if on_progress:
                 on_progress(f"[ARG] resource-object collection: authentication failed ({e})")
             return []
         try:
             subs = list_subscriptions(token, client)
-        except Exception:  # noqa: BLE001 - ARG can still run tenant-wide
+        except Exception:  # noqa: BLE001, ARG can still run tenant-wide
             subs = []
         try:
             rows = run_query(token, _RESOURCE_OBJECTS_KQL, subs, client)
@@ -612,7 +666,7 @@ def collect_resource_objects(creds: "ArgCredentials | None" = None, *, client=No
                 on_progress(f"[ARG] resource-object query failed ({e})")
             return []
         records = resource_objects_to_records(rows)
-        # Resource groups (separate `resourcecontainers` table) - best-effort; their absence
+        # Resource groups (separate `resourcecontainers` table), best-effort; their absence
         # never breaks analysis, so a failed RG query does not discard the resource objects.
         rg_records: list[dict] = []
         try:

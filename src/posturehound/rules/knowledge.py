@@ -19,7 +19,7 @@ KB: dict[str, dict] = {
         "summary": "A service principal holds a dangerous delegated Graph permission, admin-consented tenant-wide.",
         "why": "A delegated permission runs on behalf of a signed-in user, but when it is admin-consented for ALL users (consentType AllPrincipals) any admin who uses the app hands it directory-write or role-management power. This illicit-consent-grant path is invisible to an application-permission-only view.",
         "scenario": "An attacker registers or compromises an app with a delegated RoleManagement.ReadWrite.Directory grant consented tenant-wide, phishes an admin into using it, and the app assigns the attacker a privileged role on the admin's behalf.",
-        "impact": "Directory write / role management exercised on behalf of any consenting admin - persistence and privilege escalation.",
+        "impact": "Directory write / role management exercised on behalf of any consenting admin, persistence and privilege escalation.",
         "steps": [
             "Review the tenant-wide (admin) consent for this app in Enterprise Applications → Permissions.",
             "Revoke the delegated grant if unnecessary, or scope consent to specific users/groups.",
@@ -29,9 +29,9 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-011": {
         "summary": "A custom Azure RBAC role is held at subscription or management-group scope.",
-        "why": "Custom roles are not in the built-in catalogue, so their Actions/DataActions are not analysed here. A custom role can grant Microsoft.Authorization/roleAssignments/write, a wildcard */action, or listKeys - full self-escalation - while looking innocuous by name.",
+        "why": "Custom roles are not in the built-in catalogue, so their Actions/DataActions are not analysed here. A custom role can grant Microsoft.Authorization/roleAssignments/write, a wildcard */action, or listKeys, full self-escalation, while looking innocuous by name.",
         "scenario": "An attacker who compromises the principal inherits whatever the custom role permits. If it includes role-assignment write at broad scope, they grant themselves Owner and take the subscription; if it includes listKeys/secret access, they read the data plane directly.",
-        "impact": "Unknown, potentially subscription- or tenant-wide - the role's true privilege must be read from its definition.",
+        "impact": "Unknown, potentially subscription- or tenant-wide, the role's true privilege must be read from its definition.",
         "steps": [
             "Open the custom role definition and review its Actions and DataActions.",
             "If it grants Microsoft.Authorization/*/write, a wildcard */action, or listKeys/secret access, treat it as privileged and restrict its scope.",
@@ -41,7 +41,7 @@ KB: dict[str, dict] = {
     },
     "AZ-IDENT-011": {
         "summary": "An enabled account holds a Tier-0 role but has never signed in.",
-        "why": "A dormant-but-enabled privileged account is a prime, low-visibility takeover target - it is often a forgotten admin, a leftover automation account, or an intentionally-planted backdoor, and its inactivity means no one is watching it.",
+        "why": "A dormant-but-enabled privileged account is a prime, low-visibility takeover target, it is often a forgotten admin, a leftover automation account, or an intentionally-planted backdoor, and its inactivity means no one is watching it.",
         "scenario": "An attacker password-sprays or phishes the dormant Global Admin. Because nobody uses or monitors it, the compromise is unlikely to be noticed, and the account already carries full privilege.",
         "impact": "A quiet, unwatched path to Tier-0 that survives normal offboarding review.",
         "steps": [
@@ -54,7 +54,7 @@ KB: dict[str, dict] = {
     "AZ-IDENT-001": {
         "summary": "The tenant has more Global Administrators than recommended.",
         "why": "Every Global Administrator is a full-tenant compromise target. The role grants unrestricted control over identities, applications, devices and subscriptions, so each extra holder widens the attack surface and the audit burden with no segregation of duties.",
-        "scenario": "An attacker phishes or password-sprays any one GA. Because GA is all-powerful, that single foothold is immediate tenant takeover - they create backdoor identities, consent malicious apps, and disable logging. More GAs means more chances to land that first account.",
+        "scenario": "An attacker phishes or password-sprays any one GA. Because GA is all-powerful, that single foothold is immediate tenant takeover, they create backdoor identities, consent malicious apps, and disable logging. More GAs means more chances to land that first account.",
         "impact": "Full loss of tenant confidentiality, integrity and availability; regulatory exposure for any data the tenant governs.",
         "steps": [
             "List all GA holders and confirm each is still required.",
@@ -67,19 +67,19 @@ KB: dict[str, dict] = {
     "AZ-IDENT-002": {
         "summary": "Too few break-glass Global Administrators exist.",
         "why": "With fewer than two GAs, loss of the single admin account (MFA device lost, account compromised and locked, staff departure) can lock the organisation out of its own tenant.",
-        "scenario": "Not an attack path - an availability/recovery risk. If the lone GA is compromised and the attacker changes its credentials, or the account is simply lost, there is no second path to regain control.",
+        "scenario": "Not an attack path, an availability/recovery risk. If the lone GA is compromised and the attacker changes its credentials, or the account is simply lost, there is no second path to regain control.",
         "impact": "Potential tenant lockout and prolonged recovery via Microsoft support.",
         "steps": [
             "Create at least two emergency-access (break-glass) GA accounts.",
             "Make them cloud-only, excluded from Conditional Access, with long complex stored credentials.",
             "Monitor their sign-ins closely and test them on a schedule.",
         ],
-        "detection": "Alert on any sign-in by a break-glass account - it should be near-zero in normal operation.",
+        "detection": "Alert on any sign-in by a break-glass account, it should be near-zero in normal operation.",
     },
     "AZ-IDENT-003": {
         "summary": "A non-human service principal holds a Tier-0 directory role.",
         "why": "Service principals frequently carry long-lived secrets, are excluded from MFA and Conditional Access, and are weakly monitored. A privileged SP is often the softest path to tenant compromise.",
-        "scenario": "An attacker who obtains the SP's client secret or certificate (from source control, a pipeline variable, or a compromised host) authenticates non-interactively and exercises the directory role - no user, no MFA prompt.",
+        "scenario": "An attacker who obtains the SP's client secret or certificate (from source control, a pipeline variable, or a compromised host) authenticates non-interactively and exercises the directory role, no user, no MFA prompt.",
         "impact": "Tenant administration exercised by an identity outside normal user governance and monitoring.",
         "steps": [
             "Remove the directory role from the service principal.",
@@ -117,7 +117,7 @@ KB: dict[str, dict] = {
     "AZ-IDENT-006": {
         "summary": "A disabled account still holds a Tier-0 role.",
         "why": "A disabled account is often treated as harmless and dropped from monitoring, yet the role remains. Re-enablement restores full privilege instantly.",
-        "scenario": "An attacker with limited directory write (or a rogue admin) re-enables the dormant account - which already carries the role - and inherits Tier-0 without raising a new-assignment alert.",
+        "scenario": "An attacker with limited directory write (or a rogue admin) re-enables the dormant account, which already carries the role, and inherits Tier-0 without raising a new-assignment alert.",
         "impact": "A pre-positioned privileged account available for re-activation.",
         "steps": [
             "Remove privileged roles from disabled accounts.",
@@ -166,7 +166,7 @@ KB: dict[str, dict] = {
     "AZ-APP-003": {
         "summary": "A privileged application/SP is owned by a non-Tier-0 principal (AddSecret escalation).",
         "why": "An application owner can add credentials to the app and then sign in as its service principal, inheriting all of the SP's privilege. Ownership is therefore an escalation edge equivalent to holding the SP's privilege.",
-        "scenario": "A non-admin owner (e.g. a developer) adds a client secret to the privileged app, authenticates as the SP, and exercises the SP's roles/permissions - escalating from low privilege to the SP's privilege.",
+        "scenario": "A non-admin owner (e.g. a developer) adds a client secret to the privileged app, authenticates as the SP, and exercises the SP's roles/permissions, escalating from low privilege to the SP's privilege.",
         "impact": "Low-privileged users effectively hold the privilege of the apps they own.",
         "steps": [
             "Restrict ownership of privileged apps/SPs to Tier-0 administrators.",
@@ -189,7 +189,7 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-005": {
         "summary": "A privileged service principal also has stored client credentials.",
-        "why": "Combining high privilege with a static secret creates an always-usable, MFA-exempt token source - the highest-value SP to compromise.",
+        "why": "Combining high privilege with a static secret creates an always-usable, MFA-exempt token source, the highest-value SP to compromise.",
         "scenario": "The secret of a privileged SP leaks; the attacker immediately wields the SP's roles/permissions non-interactively, with no user interaction or MFA.",
         "impact": "A single leaked secret yields durable privileged access.",
         "steps": [
@@ -202,7 +202,7 @@ KB: dict[str, dict] = {
     "AZ-APP-006": {
         "summary": "An application is configured as multi-tenant.",
         "why": "A multi-tenant audience broadens the trust boundary so identities from other tenants can use the app. This is sometimes required, but should be a deliberate decision rather than an oversight.",
-        "scenario": "Not a direct compromise - a surface-area consideration. Misconfigured multi-tenant apps can be consented to by external tenants in ways that were not intended.",
+        "scenario": "Not a direct compromise, a surface-area consideration. Misconfigured multi-tenant apps can be consented to by external tenants in ways that were not intended.",
         "impact": "Wider exposure of the application than necessary.",
         "steps": [
             "Confirm multi-tenant is actually required for the app's purpose.",
@@ -213,7 +213,7 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-001": {
         "summary": "A principal holds Owner at management-group scope.",
-        "why": "Owner at a management group grants full control - including the ability to assign roles - across every child subscription and resource. It is resource-plane Tier-0.",
+        "why": "Owner at a management group grants full control, including the ability to assign roles, across every child subscription and resource. It is resource-plane Tier-0.",
         "scenario": "Compromise of the holder yields control of all subscriptions under the MG: the attacker grants itself any role, accesses data, deploys resources, and pivots via managed identities.",
         "impact": "Full compromise of every subscription beneath the management group.",
         "steps": [
@@ -237,7 +237,7 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-003": {
         "summary": "Many principals hold Owner/Contributor at subscription scope.",
-        "why": "Broad standing control at subscription scope multiplies blast radius: any one compromise grants wide resource control, and segregation of duties is lost. Owner and Contributor both carry full management-plane WRITE, so a compromised holder can not only pivot but DESTROY - delete every resource (wiper), encrypt or overwrite them and their backups (ransomware), and spin up compute for cryptomining or C2 (resource hijacking). This is a data-integrity and availability (Impact) risk, not only an escalation one.",
+        "why": "Broad standing control at subscription scope multiplies blast radius: any one compromise grants wide resource control, and segregation of duties is lost. Owner and Contributor both carry full management-plane WRITE, so a compromised holder can not only pivot but DESTROY, delete every resource (wiper), encrypt or overwrite them and their backups (ransomware), and spin up compute for cryptomining or C2 (resource hijacking). This is a data-integrity and availability (Impact) risk, not only an escalation one.",
         "scenario": "An attacker compromises one of many broadly-privileged accounts and either pivots to subscription-wide control or mass-deletes / ransoms the subscription's resources and backups directly.",
         "impact": "Large blast radius from any single account compromise.",
         "steps": [
@@ -274,7 +274,7 @@ KB: dict[str, dict] = {
     "AZ-GRP-001": {
         "summary": "A role-assignable group uses dynamic (rule-based) membership.",
         "why": "Dynamic membership adds principals automatically from attributes. On a role-assignable group, an attacker who can set the qualifying attribute on a controlled account is auto-added and inherits the role.",
-        "scenario": "The attacker edits a user attribute (e.g. department) on an account they control to match the membership rule; the account is auto-added to the privileged group and inherits its role - no direct role assignment needed.",
+        "scenario": "The attacker edits a user attribute (e.g. department) on an account they control to match the membership rule; the account is auto-added to the privileged group and inherits its role, no direct role assignment needed.",
         "impact": "Automated, attribute-driven privilege escalation.",
         "steps": [
             "Do not combine dynamic membership with role-assignable groups.",
@@ -300,7 +300,7 @@ KB: dict[str, dict] = {
     "AZ-KV-002": {
         "summary": "A Key Vault uses the legacy access-policy model instead of Azure RBAC.",
         "why": "Access policies are coarse, hard to audit centrally, and not integrated with PIM. RBAC offers finer granularity, central management and just-in-time access.",
-        "scenario": "Not a direct compromise - a manageability/governance weakness that makes least-privilege and review harder, increasing the chance of latent over-permission.",
+        "scenario": "Not a direct compromise, a manageability/governance weakness that makes least-privilege and review harder, increasing the chance of latent over-permission.",
         "impact": "Weaker, harder-to-audit access control over secrets.",
         "steps": [
             "Migrate the vault to the Azure RBAC permission model (enableRbacAuthorization=true).",
@@ -324,7 +324,7 @@ KB: dict[str, dict] = {
     "AZ-HYG-001": {
         "summary": "Guests make up a large share of the directory.",
         "why": "A high volume of externally-governed accounts expands the identity attack surface and the review burden, and stale guests accumulate unnoticed.",
-        "scenario": "Not a single attack path - each unmanaged guest is an additional externally-controlled entry point that may retain access long after it is needed.",
+        "scenario": "Not a single attack path, each unmanaged guest is an additional externally-controlled entry point that may retain access long after it is needed.",
         "impact": "Enlarged, externally-governed attack surface.",
         "steps": [
             "Enable periodic access reviews for guests.",
@@ -336,7 +336,7 @@ KB: dict[str, dict] = {
     "AZ-HYG-002": {
         "summary": "A disabled service principal still exists in the tenant.",
         "why": "Stale SPs add attack surface and review noise; a disabled SP may be re-enabled or retain credentials and stale permissions.",
-        "scenario": "Not an active path - lifecycle hygiene. Forgotten SPs are a common home for stale credentials and unexpected permissions.",
+        "scenario": "Not an active path, lifecycle hygiene. Forgotten SPs are a common home for stale credentials and unexpected permissions.",
         "impact": "Unnecessary standing attack surface.",
         "steps": [
             "Confirm the SP is no longer required.",
@@ -348,7 +348,7 @@ KB: dict[str, dict] = {
     "AZ-HYG-003": {
         "summary": "Tier-0 roles are held as permanent, direct assignments rather than via PIM.",
         "why": "Standing privilege is always-on and always a target. Just-in-time elevation shrinks the window in which a privileged role can be abused and adds approval and logging.",
-        "scenario": "Not an attack path itself - it amplifies every other one. A compromised account with a permanent Tier-0 role is usable immediately, versus an eligible role that requires activation.",
+        "scenario": "Not an attack path itself, it amplifies every other one. A compromised account with a permanent Tier-0 role is usable immediately, versus an eligible role that requires activation.",
         "impact": "Larger always-on privileged target set.",
         "steps": [
             "Adopt Privileged Identity Management for Tier-0 roles.",
@@ -396,7 +396,7 @@ KB: dict[str, dict] = {
     },
     "AZ-IDENT-008": {
         "summary": "Privileged Authentication Administrator can reset any account's credentials, including Global Admins.",
-        "why": "This role manages authentication methods and passwords for all users - so it can take over a Global Administrator and is effectively Tier-0.",
+        "why": "This role manages authentication methods and passwords for all users, so it can take over a Global Administrator and is effectively Tier-0.",
         "scenario": "The attacker holding this role resets a Global Administrator's password (or registers an MFA method) and signs in as that GA.",
         "impact": "Direct path to Global Administrator and tenant takeover.",
         "steps": [
@@ -433,7 +433,7 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-007": {
         "summary": "Application / Cloud Application Administrator can add credentials to ANY app or service principal.",
-        "why": "Unlike app ownership (limited to owned objects), these roles can add a credential to any application/SP in the tenant - including the most privileged one - and then authenticate as it.",
+        "why": "Unlike app ownership (limited to owned objects), these roles can add a credential to any application/SP in the tenant, including the most privileged one, and then authenticate as it.",
         "scenario": "The attacker adds a client secret to a highly-privileged SP, authenticates as it, and exercises that SP's roles and Graph permissions.",
         "impact": "Escalation to the privilege of the most powerful service principal in the tenant.",
         "steps": [
@@ -458,7 +458,7 @@ KB: dict[str, dict] = {
     "AZ-STOR-001": {
         "summary": "A storage account allows anonymous public access to blob data.",
         "why": "When anonymous public access is enabled at the account, individual containers can be exposed to the internet without authentication, leaking whatever data they hold.",
-        "scenario": "An attacker enumerates the account's containers and downloads any set to a public access level - no credentials required.",
+        "scenario": "An attacker enumerates the account's containers and downloads any set to a public access level, no credentials required.",
         "impact": "Direct, unauthenticated data exposure.",
         "steps": [
             "Set allowBlobPublicAccess=false on the account.",
@@ -470,7 +470,7 @@ KB: dict[str, dict] = {
     "AZ-HYG-004": {
         "summary": "An application registration has no assigned owner.",
         "why": "Orphaned apps have no accountable owner for their credentials and permissions, so they drift out of review and become a quiet home for stale secrets.",
-        "scenario": "Not a direct path - a governance gap. Unowned apps accumulate risk that no one is responsible for.",
+        "scenario": "Not a direct path, a governance gap. Unowned apps accumulate risk that no one is responsible for.",
         "impact": "Ungoverned application attack surface.",
         "steps": [
             "Assign an accountable owner to every application.",
@@ -482,7 +482,7 @@ KB: dict[str, dict] = {
     "AZ-APP-008": {
         "summary": "A privileged app/SP trusts a federated identity credential.",
         "why": "Workload identity federation lets an external issuer/subject obtain tokens as this identity with no stored secret. On a privileged identity, a misconfigured or attacker-controlled trust is silent, persistent access with nothing to rotate.",
-        "scenario": "The attacker controls (or spoofs) the trusted issuer/subject - e.g. a GitHub repo or external IdP - and requests a token as the privileged service principal directly.",
+        "scenario": "The attacker controls (or spoofs) the trusted issuer/subject, e.g. a GitHub repo or external IdP, and requests a token as the privileged service principal directly.",
         "impact": "Secret-less, hard-to-detect persistence as a privileged identity.",
         "steps": [
             "Enumerate every federated credential and confirm its issuer, subject and audience.",
@@ -493,7 +493,7 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-009": {
         "summary": "A service principal can modify Conditional Access or authentication-method policy.",
-        "why": "Permissions like Policy.ReadWrite.ConditionalAccess and UserAuthenticationMethod.ReadWrite.All let the SP disable MFA or weaken access controls tenant-wide - both an attack enabler and a way to mask other activity.",
+        "why": "Permissions like Policy.ReadWrite.ConditionalAccess and UserAuthenticationMethod.ReadWrite.All let the SP disable MFA or weaken access controls tenant-wide, both an attack enabler and a way to mask other activity.",
         "scenario": "The attacker controlling the SP disables an MFA Conditional Access policy (or registers an attacker MFA method), then proceeds with account takeover unimpeded.",
         "impact": "Tenant-wide degradation of authentication and access controls.",
         "steps": [
@@ -506,7 +506,7 @@ KB: dict[str, dict] = {
     "AZ-STOR-002": {
         "summary": "A principal can retrieve a storage account's access keys.",
         "why": "Account keys grant full, shared, weakly-audited access to all data in the account and bypass per-identity RBAC. listKeys-capable roles (Storage Account Contributor / Key Operator / Contributor / Owner) therefore equal full data access.",
-        "scenario": "The attacker calls listKeys on the account, then uses the shared key to read or tamper with all blobs/files/tables/queues - with little attribution.",
+        "scenario": "The attacker calls listKeys on the account, then uses the shared key to read or tamper with all blobs/files/tables/queues, with little attribution.",
         "impact": "Full, shared-key data compromise of the storage account.",
         "steps": [
             "Disable shared-key authorization where possible (allowSharedKeyAccess=false).",
@@ -517,7 +517,7 @@ KB: dict[str, dict] = {
     },
     "AZ-KV-004": {
         "summary": "A principal can perform cryptographic operations with Key Vault keys.",
-        "why": "Key permissions such as sign, decrypt, wrapKey and unwrapKey let the holder use a key without exporting it - forging signatures or decrypting protected data - which is easy to overlook because the key never leaves the vault.",
+        "why": "Key permissions such as sign, decrypt, wrapKey and unwrapKey let the holder use a key without exporting it, forging signatures or decrypting protected data, which is easy to overlook because the key never leaves the vault.",
         "scenario": "The attacker uses the granted key operation to decrypt protected data or sign tokens/artifacts as a trusted key.",
         "impact": "Abuse of protected cryptographic material without key exfiltration.",
         "steps": [
@@ -530,7 +530,7 @@ KB: dict[str, dict] = {
     "AZ-KV-005": {
         "summary": "A Key Vault has purge protection or soft delete disabled.",
         "why": "Without soft delete and purge protection, secrets/keys/certificates can be permanently destroyed by an attacker or by accident, causing irrecoverable loss and outages.",
-        "scenario": "Not a confidentiality issue - an availability/destruction risk. An attacker with vault control purges material to cause damage or destroy evidence.",
+        "scenario": "Not a confidentiality issue, an availability/destruction risk. An attacker with vault control purges material to cause damage or destroy evidence.",
         "impact": "Irrecoverable loss of secrets, keys and certificates.",
         "steps": [
             "Enable soft delete on all key vaults.",
@@ -541,7 +541,7 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-007": {
         "summary": "A principal can pull AKS cluster-admin credentials.",
-        "why": "listClusterAdminCredential (or a cluster-admin role) yields full Kubernetes control of the cluster - workloads, secrets, and the nodes' managed identities - bypassing Kubernetes RBAC.",
+        "why": "listClusterAdminCredential (or a cluster-admin role) yields full Kubernetes control of the cluster, workloads, secrets, and the nodes' managed identities, bypassing Kubernetes RBAC.",
         "scenario": "The attacker pulls the cluster-admin kubeconfig, execs into pods, reads Kubernetes secrets, and steals the node/pod managed-identity tokens to pivot into Azure.",
         "impact": "Full cluster compromise and a pivot into the subscription via node identities.",
         "steps": [
@@ -553,7 +553,7 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-008": {
         "summary": "A subscription has a classic Service Administrator / Co-Administrator.",
-        "why": "Classic administrators have Owner-equivalent control, predate Azure RBAC, are poorly audited, and are routinely forgotten - a powerful, low-visibility standing privilege.",
+        "why": "Classic administrators have Owner-equivalent control, predate Azure RBAC, are poorly audited, and are routinely forgotten, a powerful, low-visibility standing privilege.",
         "scenario": "The attacker compromises a classic admin account and exercises full subscription control outside the visibility of RBAC-focused monitoring.",
         "impact": "Forgotten, Owner-equivalent subscription control.",
         "steps": [
@@ -565,8 +565,8 @@ KB: dict[str, dict] = {
     },
     "AZ-STOR-003": {
         "summary": "A principal holds a Storage Blob Data role granting direct Entra-token data-plane access.",
-        "why": "Storage Blob Data Owner/Contributor/Reader bypasses shared-key monitoring entirely. The holder authenticates using their Entra identity, and the operation is logged under that identity - making it harder to detect than shared-key access and requiring no key rotation to sustain. At scale (e.g., account-level Owner) this grants read or write over all blobs in the account.",
-        "scenario": "The attacker compromises a principal with Storage Blob Data Owner at subscription scope. They list all storage accounts, enumerate every container, and exfiltrate all blob data - Terraform state, backups, and application secrets - without calling listKeys and without leaving shared-key access logs.",
+        "why": "Storage Blob Data Owner/Contributor/Reader bypasses shared-key monitoring entirely. The holder authenticates using their Entra identity, and the operation is logged under that identity, making it harder to detect than shared-key access and requiring no key rotation to sustain. At scale (e.g., account-level Owner) this grants read or write over all blobs in the account.",
+        "scenario": "The attacker compromises a principal with Storage Blob Data Owner at subscription scope. They list all storage accounts, enumerate every container, and exfiltrate all blob data, Terraform state, backups, and application secrets, without calling listKeys and without leaving shared-key access logs.",
         "impact": "Silent data exfiltration of all blobs in the storage account, including secrets, PII, backups, and code artifacts.",
         "steps": [
             "Enumerate Storage Blob Data role assignments and remove any that are broader than needed.",
@@ -578,8 +578,8 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-009": {
         "summary": "A principal can push container images to an Azure Container Registry.",
-        "why": "Container registries are a trust anchor for production workloads: any image pulled from the registry is assumed clean and executed. AcrPush access allows an attacker to inject a malicious image under a legitimate tag name, achieving persistent code execution in every environment that subsequently pulls the image - Kubernetes clusters, Azure Container Apps, App Services, and automation pipelines.",
-        "scenario": "The attacker compromises a CI/CD service principal with AcrPush. They identify a base image pulled by the production Kubernetes cluster, overwrite it with a modified image containing a reverse shell or credential harvester, and wait for the next deployment cycle. Every new pod started from that image executes attacker code with the workload's managed identity - which likely has RBAC access to Azure resources.",
+        "why": "Container registries are a trust anchor for production workloads: any image pulled from the registry is assumed clean and executed. AcrPush access allows an attacker to inject a malicious image under a legitimate tag name, achieving persistent code execution in every environment that subsequently pulls the image, Kubernetes clusters, Azure Container Apps, App Services, and automation pipelines.",
+        "scenario": "The attacker compromises a CI/CD service principal with AcrPush. They identify a base image pulled by the production Kubernetes cluster, overwrite it with a modified image containing a reverse shell or credential harvester, and wait for the next deployment cycle. Every new pod started from that image executes attacker code with the workload's managed identity, which likely has RBAC access to Azure resources.",
         "impact": "Persistent code execution across all workloads consuming the poisoned image; managed identity credential theft; potential full subscription compromise if the workload identity is privileged.",
         "steps": [
             "Remove AcrPush from any principals that do not actively build and push images.",
@@ -592,7 +592,7 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-010": {
         "summary": "A service principal can manage PIM group memberships, enabling silent escalation to Tier-0.",
-        "why": "PrivilegedAccess.ReadWrite.AzureADGroup grants the ability to create, modify, and activate PIM eligible assignments for Entra groups. If any group holds a Tier-0 directory role, the SP can activate a membership for any principal into that group - achieving full privilege escalation without a direct role assignment ever appearing in the standard Tier-0 role-holders report.",
+        "why": "PrivilegedAccess.ReadWrite.AzureADGroup grants the ability to create, modify, and activate PIM eligible assignments for Entra groups. If any group holds a Tier-0 directory role, the SP can activate a membership for any principal into that group, achieving full privilege escalation without a direct role assignment ever appearing in the standard Tier-0 role-holders report.",
         "scenario": "The attacker compromises a SP with PrivilegedAccess.ReadWrite.AzureADGroup. They enumerate groups with Tier-0 role assignments, activate their own user account as an eligible member of a Global Administrator group via PIM, and then exercise Global Administrator rights. The activation appears in PIM logs rather than direct role assignment logs, and the standing role-holders view remains unchanged.",
         "impact": "Silent Tier-0 privilege escalation visible only in PIM group activation logs.",
         "steps": [
@@ -618,7 +618,7 @@ KB: dict[str, dict] = {
     },
     "AZ-GRP-003": {
         "summary": "A group that confers a Tier-0 role can have members added by principals who are not themselves Tier-0.",
-        "why": "Role-assignable groups grant their role to every member. If a non-Tier-0 principal holds Owner, Group Administrator, or write access on the group, the group's membership - not the role assignment - becomes the weakest link. Adding yourself to the group inherits Global Administrator without ever touching a role assignment, so reviews that audit only role assignments will not see it.",
+        "why": "Role-assignable groups grant their role to every member. If a non-Tier-0 principal holds Owner, Group Administrator, or write access on the group, the group's membership, not the role assignment, becomes the weakest link. Adding yourself to the group inherits Global Administrator without ever touching a role assignment, so reviews that audit only role assignments will not see it.",
         "scenario": "The attacker compromises an account that owns or can manage the group (a group owner, a Group Administrator, or an SP with Group.ReadWrite.All). They add their own account as a member. Entra grants the group's Tier-0 role to the new member, typically within minutes. The attacker now holds Global Administrator; the only audit evidence is a group-membership change, not a role grant.",
         "impact": "Full tenant compromise via group membership, bypassing role-assignment review and approval.",
         "steps": [
@@ -633,20 +633,20 @@ KB: dict[str, dict] = {
     "AZ-RBAC-010": {
         "summary": "A principal can run arbitrary code on a virtual machine through Azure control-plane roles.",
         "why": "Roles that permit run-command, custom script extensions, or VM administrator login let a principal execute code on the guest OS without any credential for the VM itself. Once code runs on the VM, any managed identity attached to that VM is reachable through the instance metadata endpoint, so control-plane access converts directly into that identity's data-plane and RBAC privileges.",
-        "scenario": "The attacker uses `az vm run-command invoke` (or deploys a CustomScriptExtension) on the VM. The command runs as SYSTEM/root. They query IMDS at 169.254.169.254 for a token for the VM's managed identity, then use that token against Key Vault, Storage, or ARM with whatever roles the identity holds - often far more than the attacker's own account.",
+        "scenario": "The attacker uses `az vm run-command invoke` (or deploys a CustomScriptExtension) on the VM. The command runs as SYSTEM/root. They query IMDS at 169.254.169.254 for a token for the VM's managed identity, then use that token against Key Vault, Storage, or ARM with whatever roles the identity holds, often far more than the attacker's own account.",
         "impact": "Code execution on the host plus theft of the VM's managed-identity tokens, pivoting to every resource that identity can reach.",
         "steps": [
             "Restrict run-command and extension-deployment rights to a small break-glass set; they are effectively 'root on this VM'.",
-            "Remove Owner/Contributor at VM scope from principals that only need to read VM state - use Reader or Virtual Machine User Login instead.",
+            "Remove Owner/Contributor at VM scope from principals that only need to read VM state, use Reader or Virtual Machine User Login instead.",
             "Reduce the RBAC roles held by the VM's managed identity to the minimum the workload needs, so the pivot is worth less.",
             "Require just-in-time or PIM activation for the roles that permit code execution.",
             "Enable Defender for Cloud's run-command auditing on production VMs.",
         ],
-        "detection": "Alert on `Microsoft.Compute/virtualMachines/runCommand/action` and `Microsoft.Compute/virtualMachines/extensions/write` in Azure Activity Log. Correlate with a managed-identity token request from the same VM shortly afterwards - that sequence is the escalation.",
+        "detection": "Alert on `Microsoft.Compute/virtualMachines/runCommand/action` and `Microsoft.Compute/virtualMachines/extensions/write` in Azure Activity Log. Correlate with a managed-identity token request from the same VM shortly afterwards, that sequence is the escalation.",
     },
     "AZ-APP-014": {
         "summary": "A service principal holds Graph permissions that allow bulk reading of tenant data.",
-        "why": "Permissions such as Mail.Read, Files.Read.All, Sites.Read.All, and User.Read.All apply tenant-wide as application permissions - there is no per-user consent and no per-mailbox restriction. A single credential on this SP reads every mailbox, every SharePoint site, or every user record. This is a data-breach vector rather than a privilege-escalation one, so escalation-focused reviews routinely miss it.",
+        "why": "Permissions such as Mail.Read, Files.Read.All, Sites.Read.All, and User.Read.All apply tenant-wide as application permissions, there is no per-user consent and no per-mailbox restriction. A single credential on this SP reads every mailbox, every SharePoint site, or every user record. This is a data-breach vector rather than a privilege-escalation one, so escalation-focused reviews routinely miss it.",
         "scenario": "The attacker obtains one of the SP's client secrets (from a pipeline variable, a committed config file, or a compromised developer machine), authenticates as the application with no user interaction and no MFA, and pages through Graph to bulk-export mail, files, or the full user directory. Because the app is authorised tenant-wide, nothing in the request looks anomalous.",
         "impact": "Tenant-wide data exfiltration using a single non-interactive credential, with no MFA and no per-user consent barrier.",
         "steps": [
@@ -660,21 +660,21 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-015": {
         "summary": "A service principal holds Domain.ReadWrite.All, which permits tenant-level domain changes.",
-        "why": "Domain.ReadWrite.All allows adding and verifying custom domains and changing federation settings. An attacker who adds a domain they control and configures it as federated can mint SAML assertions that Entra accepts as authentication for users in that domain - the 'Golden SAML' technique. This bypasses passwords, MFA, and Conditional Access entirely, and it survives password resets.",
-        "scenario": "The attacker uses the SP to add `attacker-controlled.example` to the tenant, completes DNS verification, and sets the domain to federated with their own signing certificate. They then issue a SAML assertion for a Global Administrator's immutable identifier. Entra trusts the federation and grants a session - no credential and no MFA prompt.",
+        "why": "Domain.ReadWrite.All allows adding and verifying custom domains and changing federation settings. An attacker who adds a domain they control and configures it as federated can mint SAML assertions that Entra accepts as authentication for users in that domain, the 'Golden SAML' technique. This bypasses passwords, MFA, and Conditional Access entirely, and it survives password resets.",
+        "scenario": "The attacker uses the SP to add `attacker-controlled.example` to the tenant, completes DNS verification, and sets the domain to federated with their own signing certificate. They then issue a SAML assertion for a Global Administrator's immutable identifier. Entra trusts the federation and grants a session, no credential and no MFA prompt.",
         "impact": "Persistent, credential-free authentication as any user including Global Administrators; survives password and MFA resets.",
         "steps": [
-            "Remove Domain.ReadWrite.All from this service principal - almost no application legitimately needs it.",
+            "Remove Domain.ReadWrite.All from this service principal, almost no application legitimately needs it.",
             "Audit the tenant's current domain list and federation configuration for any domain you do not recognise.",
             "Alert on all federation-settings changes; treat them as break-glass operations.",
             "If the permission is genuinely required, isolate it in a dedicated SP with certificate auth, no standing secret, and a named owner.",
         ],
-        "detection": "Alert immediately on 'Add unverified domain', 'Verify domain', and 'Set domain authentication' events in the Entra audit log, and on any change to federation signing certificates. These are rare, high-signal events - every occurrence deserves investigation.",
+        "detection": "Alert immediately on 'Add unverified domain', 'Verify domain', and 'Set domain authentication' events in the Entra audit log, and on any change to federation signing certificates. These are rare, high-signal events, every occurrence deserves investigation.",
     },
     "AZ-APP-016": {
         "summary": "A privileged enterprise application can be accessed by every user in the tenant.",
-        "why": "When `appRoleAssignmentRequired` is false, any authenticated tenant member can obtain a token for the application - assignment is not enforced. If that application also holds sensitive Graph permissions or stored credentials, the set of people who can reach its capability is the entire directory, including guests, dormant accounts, and ex-employees whose accounts have not yet been disabled.",
-        "scenario": "The attacker compromises any low-privilege account - a guest, a service account, a stale user. They authenticate to the application, which does not check role assignment, and exercise whatever the app is authorised to do on their behalf. A low-value foothold becomes access to the app's privileges.",
+        "why": "When `appRoleAssignmentRequired` is false, any authenticated tenant member can obtain a token for the application, assignment is not enforced. If that application also holds sensitive Graph permissions or stored credentials, the set of people who can reach its capability is the entire directory, including guests, dormant accounts, and ex-employees whose accounts have not yet been disabled.",
+        "scenario": "The attacker compromises any low-privilege account, a guest, a service account, a stale user. They authenticate to the application, which does not check role assignment, and exercise whatever the app is authorised to do on their behalf. A low-value foothold becomes access to the app's privileges.",
         "impact": "Any tenant account, however low-privilege, becomes a path to this application's capabilities.",
         "steps": [
             "Set 'User assignment required?' to Yes on the enterprise application.",
@@ -687,7 +687,7 @@ KB: dict[str, dict] = {
     },
     "AZ-HYG-005": {
         "summary": "A disabled user account still holds Azure RBAC role assignments.",
-        "why": "Disabling an account blocks interactive sign-in but does not remove its role assignments. If the account is ever re-enabled - by a helpdesk restore, an HR rehire workflow, or an attacker with User Administrator - every role comes back instantly and silently. Disabled-but-privileged accounts are attractive because they are excluded from most access reviews and nobody is monitoring their activity.",
+        "why": "Disabling an account blocks interactive sign-in but does not remove its role assignments. If the account is ever re-enabled, by a helpdesk restore, an HR rehire workflow, or an attacker with User Administrator, every role comes back instantly and silently. Disabled-but-privileged accounts are attractive because they are excluded from most access reviews and nobody is monitoring their activity.",
         "scenario": "The attacker, holding User Administrator or an equivalent, re-enables a disabled account that still has Contributor or Owner. They reset its password (a permitted operation on a non-Tier-0 account), sign in, and inherit the standing role assignments. The activity looks like a routine account restore rather than a privilege grant.",
         "impact": "Dormant standing privilege that can be reactivated without ever creating a new role assignment.",
         "steps": [
@@ -705,7 +705,7 @@ KB: dict[str, dict] = {
         "impact": "Full, unattributable, non-revocable data-plane access to the entire storage account from anywhere the key reaches.",
         "steps": [
             "Set `allowSharedKeyAccess=false` on the storage account.",
-            "Migrate consumers to Entra authentication - managed identity or service principal with a scoped data-plane RBAC role such as Storage Blob Data Reader.",
+            "Migrate consumers to Entra authentication, managed identity or service principal with a scoped data-plane RBAC role such as Storage Blob Data Reader.",
             "Rotate both access keys after migrating, to invalidate any copies already leaked.",
             "Where a key is unavoidable, issue a short-lived user-delegation SAS instead of the account key.",
         ],
@@ -713,8 +713,8 @@ KB: dict[str, dict] = {
     },
     "AZ-KV-006": {
         "summary": "A Key Vault accepts network connections from any source.",
-        "why": "With the firewall default action set to Allow, the vault's management and data-plane endpoints are reachable from the public internet. Authentication is still required, so this is not by itself a breach - but it removes the network layer that would otherwise contain a stolen token or credential. A leaked service-principal secret becomes immediately usable from anywhere, and the vault is exposed to unauthenticated enumeration and brute-force noise.",
-        "scenario": "The attacker obtains a token or secret for a principal with Key Vault access - from a compromised pipeline, a leaked credential, or a token stolen from a VM's IMDS. Because the vault has no network restriction, they use it directly from their own infrastructure with no need for a foothold inside the tenant network.",
+        "why": "With the firewall default action set to Allow, the vault's management and data-plane endpoints are reachable from the public internet. Authentication is still required, so this is not by itself a breach, but it removes the network layer that would otherwise contain a stolen token or credential. A leaked service-principal secret becomes immediately usable from anywhere, and the vault is exposed to unauthenticated enumeration and brute-force noise.",
+        "scenario": "The attacker obtains a token or secret for a principal with Key Vault access, from a compromised pipeline, a leaked credential, or a token stolen from a VM's IMDS. Because the vault has no network restriction, they use it directly from their own infrastructure with no need for a foothold inside the tenant network.",
         "impact": "Removes network-layer containment, so any stolen credential for the vault is usable from the open internet.",
         "steps": [
             "Set the Key Vault firewall `defaultAction` to Deny.",
@@ -725,13 +725,13 @@ KB: dict[str, dict] = {
         "detection": "Enable Key Vault diagnostic logging (`AuditEvent`) and alert on successful access from IP ranges outside your expected set, and on bursts of failed authentication indicating enumeration.",
     },
     "AZ-IDENT-015": {
-        "summary": "A Tier-0 role's PIM activation policy is weak - no MFA on activation and/or eligibility that never expires.",
-        "why": "Privileged Identity Management reduces standing privilege by making a role eligible-but-not-active, so it is only as strong as the rules that govern activation. If activating Global Administrator requires no multi-factor authentication, a single stolen or phished password produces Tier-0 on demand - the just-in-time model gives no protection. If an eligible assignment is permitted to be permanent, the shadow-admin path never lapses and survives every access review that only checks active roles. Both gaps live in the role-management policy and are invisible to assignment or eligibility data alone.",
-        "scenario": "An attacker who has only a password (no second factor) for an account that is PIM-eligible for a Tier-0 role activates the role with a single request - no MFA challenge, no approval - and is now Global Administrator. Because eligibility is permanent, the same path is available again tomorrow.",
+        "summary": "A Tier-0 role's PIM activation policy is weak, no MFA on activation and/or eligibility that never expires.",
+        "why": "Privileged Identity Management reduces standing privilege by making a role eligible-but-not-active, so it is only as strong as the rules that govern activation. If activating Global Administrator requires no multi-factor authentication, a single stolen or phished password produces Tier-0 on demand, the just-in-time model gives no protection. If an eligible assignment is permitted to be permanent, the shadow-admin path never lapses and survives every access review that only checks active roles. Both gaps live in the role-management policy and are invisible to assignment or eligibility data alone.",
+        "scenario": "An attacker who has only a password (no second factor) for an account that is PIM-eligible for a Tier-0 role activates the role with a single request, no MFA challenge, no approval, and is now Global Administrator. Because eligibility is permanent, the same path is available again tomorrow.",
         "impact": "On-demand Tier-0 activation from a compromised credential, with a persistence path that never expires.",
         "steps": [
             "Require MFA on activation for every Tier-0 role's PIM policy.",
-            "Require approval (and justification) for the most sensitive roles - Global Administrator, Privileged Role Administrator.",
+            "Require approval (and justification) for the most sensitive roles, Global Administrator, Privileged Role Administrator.",
             "Require eligible assignments to expire; disallow permanent eligibility for Tier-0 roles.",
             "Cap activation duration and alert on every Tier-0 activation.",
         ],
@@ -739,8 +739,8 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-014": {
         "summary": "A principal holds an Azure data-plane role (Storage Blob Data / Key Vault Secrets / etc.) at subscription or management-group scope.",
-        "why": "Data-plane roles grant direct access to the contents of resources - blob data, queue messages, Key Vault secrets and keys - separately from the control-plane roles (Owner/Contributor) that most reviews focus on. Assigned at subscription or management-group scope, a single grant reaches the data in every storage account or vault beneath it. Key Vault Secrets User at subscription scope, for example, can read every secret in every vault in the subscription, and Storage Blob Data Contributor at that scope can read and overwrite every blob. This is mass data access hiding below the control-plane review line.",
-        "scenario": "An attacker compromises the principal and, without ever touching a control-plane role or triggering an Owner/Contributor alert, reads every Key Vault secret or exfiltrates every blob across the subscription - the data-plane role already grants it directly.",
+        "why": "Data-plane roles grant direct access to the contents of resources, blob data, queue messages, Key Vault secrets and keys, separately from the control-plane roles (Owner/Contributor) that most reviews focus on. Assigned at subscription or management-group scope, a single grant reaches the data in every storage account or vault beneath it. Key Vault Secrets User at subscription scope, for example, can read every secret in every vault in the subscription, and Storage Blob Data Contributor at that scope can read and overwrite every blob. This is mass data access hiding below the control-plane review line.",
+        "scenario": "An attacker compromises the principal and, without ever touching a control-plane role or triggering an Owner/Contributor alert, reads every Key Vault secret or exfiltrates every blob across the subscription, the data-plane role already grants it directly.",
         "impact": "Direct, subscription- or tenant-wide access to the data inside storage and Key Vault, bypassing control-plane controls.",
         "steps": [
             "Scope every data-plane role to the specific storage account or Key Vault that requires it, never to a subscription or management group.",
@@ -752,8 +752,8 @@ KB: dict[str, dict] = {
     },
     "AZ-GRP-005": {
         "summary": "A group holds Owner or User Access Administrator on a subscription or management group, so every member inherits a self-escalating role.",
-        "why": "Owner and User Access Administrator can assign any RBAC role, including to the holder - self-escalation. When the holder is a group, every member inherits that power, and the risk scales with membership: a 300-member group with User Access Administrator is 300 principals that can each grant themselves full control. Group membership is also a softer target than a direct role assignment - adding a member is often a lower-friction, less-audited action - so the group becomes a wide, quietly-expandable path to takeover.",
-        "scenario": "An attacker compromises any one member of the group (or gets themselves added to it) and uses the inherited User Access Administrator / Owner right to assign Owner to an identity they control across the whole scope - turning membership in an ordinary-looking group into estate-wide control.",
+        "why": "Owner and User Access Administrator can assign any RBAC role, including to the holder, self-escalation. When the holder is a group, every member inherits that power, and the risk scales with membership: a 300-member group with User Access Administrator is 300 principals that can each grant themselves full control. Group membership is also a softer target than a direct role assignment, adding a member is often a lower-friction, less-audited action, so the group becomes a wide, quietly-expandable path to takeover.",
+        "scenario": "An attacker compromises any one member of the group (or gets themselves added to it) and uses the inherited User Access Administrator / Owner right to assign Owner to an identity they control across the whole scope, turning membership in an ordinary-looking group into estate-wide control.",
         "impact": "Every current and future member of the group holds a self-escalation primitive over a subscription or management group.",
         "steps": [
             "Never grant Owner / User Access Administrator to a broad membership group; assign it to a small, named set of principals instead.",
@@ -765,8 +765,8 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-022": {
         "summary": "A service principal with no assigned owner holds a high-impact Microsoft Graph application permission.",
-        "why": "An ownerless service principal has no one accountable for it: its credentials are never rotated, its permissions never re-justified, and its compromise never noticed. When that same forgotten identity holds a permission like Directory.ReadWrite.All or RoleManagement.ReadWrite.Directory, it is a fully-powered, un-watched path to privilege escalation or tenant-wide data access. Attackers specifically hunt for exactly this combination - high privilege with no accountability - because it is the least likely to be cleaned up or detected.",
-        "scenario": "An attacker recovers a stale credential for the ownerless SP (from an old pipeline, a config file, a repo) - nobody rotated it because nobody owns it - and uses its Graph permission to grant a directory role or read directory/data across the tenant, with no owner to notice the identity is suddenly active.",
+        "why": "An ownerless service principal has no one accountable for it: its credentials are never rotated, its permissions never re-justified, and its compromise never noticed. When that same forgotten identity holds a permission like Directory.ReadWrite.All or RoleManagement.ReadWrite.Directory, it is a fully-powered, un-watched path to privilege escalation or tenant-wide data access. Attackers specifically hunt for exactly this combination, high privilege with no accountability, because it is the least likely to be cleaned up or detected.",
+        "scenario": "An attacker recovers a stale credential for the ownerless SP (from an old pipeline, a config file, a repo), nobody rotated it because nobody owns it, and uses its Graph permission to grant a directory role or read directory/data across the tenant, with no owner to notice the identity is suddenly active.",
         "impact": "A forgotten, unmonitored identity wielding a tenant-wide escalation or data-access permission.",
         "steps": [
             "Assign an accountable owner to every service principal, or decommission the ones no longer needed.",
@@ -778,7 +778,7 @@ KB: dict[str, dict] = {
     },
     "AZ-IDENT-016": {
         "summary": "An external guest (B2B) user holds an administrative Entra directory role below Tier-0, such as Billing Administrator or User Administrator.",
-        "why": "Entra directory roles are all administrative - there is no benign one to hand to an outsider. A guest account's credentials, MFA and lifecycle are governed by another organisation you do not control, so a role assigned to it is standing tenant privilege sitting behind someone else's security posture. Tier-0 guest roles are caught by AZ-IDENT-004; the non-Tier-0 admin roles are just as unsuitable for an external identity and are exactly the ones that get overlooked.",
+        "why": "Entra directory roles are all administrative, there is no benign one to hand to an outsider. A guest account's credentials, MFA and lifecycle are governed by another organisation you do not control, so a role assigned to it is standing tenant privilege sitting behind someone else's security posture. Tier-0 guest roles are caught by AZ-IDENT-004; the non-Tier-0 admin roles are just as unsuitable for an external identity and are exactly the ones that get overlooked.",
         "scenario": "An attacker compromises the guest's home-tenant account (phishing, a breached partner) and, because that guest still holds a directory role here, immediately inherits administrative capability in this tenant without ever touching a local account.",
         "impact": "Standing administrative capability in the tenant held by an identity governed by an outside organisation.",
         "steps": [
@@ -791,7 +791,7 @@ KB: dict[str, dict] = {
     },
     "AZ-IDENT-017": {
         "summary": "An unusually large number of principals hold standing Tier-0 privilege, creating an unreviewable and oversized administrative blast radius.",
-        "why": "Every standing Tier-0 principal is a full-tenant compromise target that must be individually secured, monitored and periodically justified. Past a modest count the population becomes impossible to review meaningfully, least-privilege erodes, and the odds that at least one of those accounts is weakly protected or stale approach certainty. Minimising standing privilege - and elevating just-in-time through PIM instead - is the core of Microsoft's privileged-access guidance.",
+        "why": "Every standing Tier-0 principal is a full-tenant compromise target that must be individually secured, monitored and periodically justified. Past a modest count the population becomes impossible to review meaningfully, least-privilege erodes, and the odds that at least one of those accounts is weakly protected or stale approach certainty. Minimising standing privilege, and elevating just-in-time through PIM instead, is the core of Microsoft's privileged-access guidance.",
         "scenario": "An attacker does not need to hit a specific admin: with dozens of standing Tier-0 principals, they phish or password-spray broadly and only need one of the many to succeed to obtain full tenant control.",
         "impact": "A large, hard-to-govern set of full-takeover targets, any one of which compromises the whole tenant.",
         "steps": [
@@ -804,9 +804,9 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-023": {
         "summary": "An application registered in another tenant (third-party SaaS or a Microsoft multi-tenant app) has tenant-wide admin consent to a high-impact delegated Microsoft Graph permission.",
-        "why": "Tenant-wide (AllPrincipals) delegated consent lets the external app act with the signed-in user's directory privileges on that scope. When a privileged user signs in to the app, the external service can write to the directory on their behalf - the classic illicit-consent-grant surface. Because the app's registration lives elsewhere you cannot add a credential to it (so AZ-APP-017 skips it), but the consent you granted is entirely yours to govern, and a third-party SaaS holding Directory.ReadWrite.All across all users is a real persistence and escalation path.",
-        "scenario": "An attacker compromises the external SaaS provider (or the app itself is malicious/over-scoped); the standing tenant-wide consent then lets it manipulate directory objects whenever any of your users - especially an admin - uses it.",
-        "impact": "An outside application can perform high-impact directory actions on behalf of your users, with no credential of yours to revoke - only the consent.",
+        "why": "Tenant-wide (AllPrincipals) delegated consent lets the external app act with the signed-in user's directory privileges on that scope. When a privileged user signs in to the app, the external service can write to the directory on their behalf, the classic illicit-consent-grant surface. Because the app's registration lives elsewhere you cannot add a credential to it (so AZ-APP-017 skips it), but the consent you granted is entirely yours to govern, and a third-party SaaS holding Directory.ReadWrite.All across all users is a real persistence and escalation path.",
+        "scenario": "An attacker compromises the external SaaS provider (or the app itself is malicious/over-scoped); the standing tenant-wide consent then lets it manipulate directory objects whenever any of your users, especially an admin, uses it.",
+        "impact": "An outside application can perform high-impact directory actions on behalf of your users, with no credential of yours to revoke, only the consent.",
         "steps": [
             "Review the tenant-wide admin consent granted to each external application.",
             "Revoke consent that is not required, and scope necessary consent to specific users or groups instead of AllPrincipals.",
@@ -817,7 +817,7 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-025": {
         "summary": "An external multi-tenant application has tenant-wide admin consent to read or write every user's mailbox, files, SharePoint sites or Teams chat.",
-        "why": "Delegated consent to a bulk-data scope (Mail.Read/ReadWrite, Files.*.All, Sites.*.All, Chat.*) lets the app access that content as the signed-in user; granted for AllPrincipals it applies to the entire organisation. A single third-party SaaS provider - or a compromise of it - can then read or exfiltrate the mail, documents and chats of everyone who uses it. This is the mass-data-exposure surface, separate from directory escalation: the app cannot necessarily elevate privilege, but it can quietly siphon the organisation's data. Calendar-sync and mail-send integrations are excluded because they are ubiquitous and low-risk; this fires only on read/write of the sensitive bulk stores.",
+        "why": "Delegated consent to a bulk-data scope (Mail.Read/ReadWrite, Files.*.All, Sites.*.All, Chat.*) lets the app access that content as the signed-in user; granted for AllPrincipals it applies to the entire organisation. A single third-party SaaS provider, or a compromise of it, can then read or exfiltrate the mail, documents and chats of everyone who uses it. This is the mass-data-exposure surface, separate from directory escalation: the app cannot necessarily elevate privilege, but it can quietly siphon the organisation's data. Calendar-sync and mail-send integrations are excluded because they are ubiquitous and low-risk; this fires only on read/write of the sensitive bulk stores.",
         "scenario": "A popular productivity or sales SaaS is admin-consented to Mail.ReadWrite for all users; the vendor is breached (or the app is over-scoped), and the attacker reads every mailbox in the tenant through the standing grant without touching any account directly.",
         "impact": "Tenant-wide exposure of mailboxes, files, sites or chats to an external application and its provider.",
         "steps": [
@@ -830,9 +830,9 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-026": {
         "summary": "An external multi-tenant app has tenant-wide consent to a lower-impact but still organisation-wide scope: reading/writing all calendars or contacts, sending mail as any user, or reading org meetings.",
-        "why": "These are the everyday productivity integrations - calendar sync, scheduling assistants, mailers - so the impact is well below reading all mail or files. But tenant-wide (AllPrincipals) consent still gives an outside vendor a real capability over every user: injecting or reading meeting invites and attendees across the org, harvesting the contact graph, or sending mail as staff (a phishing vector). The value is governance: knowing which external apps hold standing organisation-wide consent, so each one is a sanctioned, reviewed decision rather than an unnoticed accumulation.",
+        "why": "These are the everyday productivity integrations, calendar sync, scheduling assistants, mailers, so the impact is well below reading all mail or files. But tenant-wide (AllPrincipals) consent still gives an outside vendor a real capability over every user: injecting or reading meeting invites and attendees across the org, harvesting the contact graph, or sending mail as staff (a phishing vector). The value is governance: knowing which external apps hold standing organisation-wide consent, so each one is a sanctioned, reviewed decision rather than an unnoticed accumulation.",
         "scenario": "A scheduling or mailer SaaS is admin-consented Calendars.ReadWrite or Mail.Send for all users; if the vendor is compromised or the app is abused, an attacker injects convincing meeting invites or sends mail as employees tenant-wide to drive phishing, without any account compromise.",
-        "impact": "An external vendor holds standing, organisation-wide access to calendars, contacts or send-as - a lower-severity but real governance and phishing surface.",
+        "impact": "An external vendor holds standing, organisation-wide access to calendars, contacts or send-as, a lower-severity but real governance and phishing surface.",
         "steps": [
             "Maintain an allow-list of sanctioned external productivity integrations and review it periodically.",
             "Prefer per-user consent for calendar/contacts add-ins over tenant-wide AllPrincipals consent.",
@@ -844,7 +844,7 @@ KB: dict[str, dict] = {
     "AZ-APP-024": {
         "summary": "A single application or service principal carries an unusually large number of client secrets and/or certificates.",
         "why": "Each credential is an independent way to authenticate as the identity, so a large accumulation widens the theft surface, signals that old secrets are left in place when new ones are added (poor rotation), and makes it impossible to revoke a leaked credential with confidence because no one knows which of the many is in use where. Credential sprawl is both a hygiene failure and a direct increase in the number of things an attacker can steal to become the identity.",
-        "scenario": "An attacker recovers just one of the identity's many secrets - from an old pipeline, a config backup, a repo - and authenticates as the application; defenders cannot safely rotate because they cannot tell which of the ten credentials production depends on.",
+        "scenario": "An attacker recovers just one of the identity's many secrets, from an old pipeline, a config backup, a repo, and authenticates as the application; defenders cannot safely rotate because they cannot tell which of the ten credentials production depends on.",
         "impact": "A larger credential-theft surface and unrotatable secrets on a single powerful identity.",
         "steps": [
             "Consolidate each workload to a single active credential and remove superseded secrets and certificates.",
@@ -854,10 +854,48 @@ KB: dict[str, dict] = {
         ],
         "detection": "Count passwordCredentials plus keyCredentials per application/service principal; alert when the total crosses a low threshold and review whether all are still needed.",
     },
+    "AZ-APP-032": {
+        "summary": "A service principal holds broad Microsoft Graph permissions, reconnaissance reads or uncatalogued write scopes, that warrant a least-privilege review and are not already flagged by a dedicated rule.",
+        "why": "Least privilege is the control that limits the blast radius of a compromised application identity, yet app registrations accumulate permissions over time and are rarely trimmed. The dedicated rules flag the specific escalation and exfiltration permissions; this catch-all covers the rest so nothing slips through, broad tenant-wide reads (Directory/User/Group/Policy.Read.All) that enable reconnaissance and data exposure, and any write scope not in the curated catalog, rated by name pattern so a new or unknown permission is still caught. Because it deliberately excludes permissions a specific rule already reports, it adds coverage without reporting the same service principal twice.",
+        "scenario": "An attacker compromises an application granted far more than it uses, for example broad Directory.Read.All and User.Read.All reconnaissance scopes, and silently enumerates the entire directory (users, groups, roles, configuration) to plan the next move, without tripping an escalation or exfiltration rule.",
+        "impact": "Over-granted read scopes turn a compromised app into a tenant-wide reconnaissance tool; uncatalogued write scopes may enable undocumented abuse. Both widen the blast radius of a single application compromise.",
+        "steps": [
+            "Review each permission listed in the finding against what the application actually calls.",
+            "Remove broad read and write scopes the app does not demonstrably need; prefer the narrowest scope available.",
+            "Prefer delegated (user-context) permissions over application permissions where a user is present.",
+            "Re-run admin consent on the trimmed permission set and recheck the profile.",
+        ],
+        "detection": "Enumerate _granted_app_roles per service principal, categorise each permission by impact, and review any SP holding Medium-or-higher scopes that no targeted rule already reports, especially broad tenant-wide (.Read.All) reads and write scopes outside the curated catalog.",
+    },
+    "AZ-APP-033": {
+        "summary": "A service principal holds full_access_as_app on Exchange Online or SharePoint, full app-only access to every mailbox or site in the tenant.",
+        "why": "full_access_as_app is an application permission on Office 365 Exchange Online / SharePoint Online that grants an app complete, app-only access to EVERY mailbox or EVERY site in the tenant, with no signed-in user and no per-object consent. It is one of the broadest grants an application can hold, yet it lives on a non-Microsoft-Graph API, so the Graph-permission rules never inspect it. A compromise of an app holding this permission reads, sends and deletes mail, or reads and modifies documents, across the whole organisation.",
+        "scenario": "An attacker compromises the credentials of a reporting or archival app that was granted full_access_as_app, then uses app-only authentication to read every executive's mailbox and exfiltrate sensitive mail, with no user interaction and no conditional-access challenge.",
+        "impact": "Full tenant-wide mailbox or SharePoint access from a single application identity, mass data exposure, mail exfiltration or document tampering across every user.",
+        "steps": [
+            "Remove the full_access_as_app application grant from the service principal.",
+            "Scope the app to the mailboxes it needs with an Exchange Application Access Policy, or to specific sites with the Sites.Selected permission model.",
+            "Rotate the service principal's credentials in case the broad access was already abused.",
+            "Review mailbox/site audit logs for access from this app identity.",
+        ],
+        "detection": "Enumerate app-role grants (AZAppRoleAssignment) whose value is full_access_as_app and whose resource API is Office 365 Exchange Online or SharePoint Online; alert on any new such grant.",
+    },
+    "AZ-APP-034": {
+        "summary": "A service principal holds an admin-consented user_impersonation scope on an Azure management API (ARM or Key Vault), letting it act as the signed-in user across Azure.",
+        "why": "user_impersonation is a delegated scope that lets an app act on behalf of the signed-in user against a resource API. On most APIs this is routine, but on Azure Service Management it means the app can drive the Azure Resource Manager control plane, every subscription and resource the user can reach, and on Azure Key Vault it means the app can read secrets, keys and certificates as that user. Granted tenant-wide (admin consent / AllPrincipals), any user session the app obtains becomes a path into the Azure resource estate. Because it is a non-Graph delegated grant, the Microsoft Graph permission rules do not see it.",
+        "scenario": "An attacker compromises an app that holds tenant-wide user_impersonation on Azure Service Management, phishes or rides an admin's session, and uses the delegated token to enumerate and modify Azure resources (role assignments, VMs, storage) as that administrator.",
+        "impact": "Delegated control of the Azure management plane or Key Vault data plane as any signed-in user, resource takeover or secret theft scoped to the victim user's Azure access.",
+        "steps": [
+            "Revoke the tenant-wide (AllPrincipals) user_impersonation delegated grant on Azure Service Management / Key Vault.",
+            "If the automation needs Azure access, assign the service principal a least-privilege Azure RBAC role on the specific scope instead of user-delegated management access.",
+            "Audit sign-in and ARM activity logs for on-behalf-of access from this app.",
+        ],
+        "detection": "Enumerate OAuth2 delegated grants (AZOAuth2GrantDelegated) with consentType AllPrincipals whose scope includes user_impersonation and whose resource API is Azure Service Management or Azure Key Vault.",
+    },
     "AZ-GRP-006": {
         "summary": "A group with a large membership grants Key Vault secret access to every member.",
-        "why": "Key Vault access granted to a broad membership group means the blast radius equals the member count: every member can read the secrets, keys and certificates the group reaches. Group names frequently understate this (a 'Read Only' or 'Support' group that actually holds Key Vault access), so the exposure is easy to miss in a review, and adding someone to the group silently hands them the credentials. Concentrating remediation on the group - rather than the individual members - is what actually shrinks the surface.",
-        "scenario": "An attacker compromises any one of the many members of a group that reaches Key Vaults, and reads the stored credentials (database passwords, API keys, certificates) that the group's access exposes - without ever touching a privileged admin account.",
+        "why": "Key Vault access granted to a broad membership group means the blast radius equals the member count: every member can read the secrets, keys and certificates the group reaches. Group names frequently understate this (a 'Read Only' or 'Support' group that actually holds Key Vault access), so the exposure is easy to miss in a review, and adding someone to the group silently hands them the credentials. Concentrating remediation on the group, rather than the individual members, is what actually shrinks the surface.",
+        "scenario": "An attacker compromises any one of the many members of a group that reaches Key Vaults, and reads the stored credentials (database passwords, API keys, certificates) that the group's access exposes, without ever touching a privileged admin account.",
         "impact": "Every member of a broad group can read the secrets the group reaches; one compromised member exposes those credentials.",
         "steps": [
             "Scope Key Vault access to per-workload identities, not broad membership groups.",
@@ -869,8 +907,8 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-015": {
         "summary": "A single Azure Container Registry can be pushed to by a large number of distinct principals.",
-        "why": "The trust boundary of a registry is the union of everyone who can push to it. When many principals can push, any one of them - or any one that is compromised - can poison an image that downstream workloads (AKS, App Service, functions) pull and execute, turning the registry into a shared supply-chain chokepoint. Flagging the registry itself, and how many principals must be trusted, is more actionable than chasing each individual pusher.",
-        "scenario": "An attacker compromises one of the many identities with push access, replaces or adds a tag on a widely-pulled image, and gains code execution wherever that image is deployed - a classic supply-chain compromise reaching far beyond the identity actually breached.",
+        "why": "The trust boundary of a registry is the union of everyone who can push to it. When many principals can push, any one of them, or any one that is compromised, can poison an image that downstream workloads (AKS, App Service, functions) pull and execute, turning the registry into a shared supply-chain chokepoint. Flagging the registry itself, and how many principals must be trusted, is more actionable than chasing each individual pusher.",
+        "scenario": "An attacker compromises one of the many identities with push access, replaces or adds a tag on a widely-pulled image, and gains code execution wherever that image is deployed, a classic supply-chain compromise reaching far beyond the identity actually breached.",
         "impact": "Any of many principals can inject code into images that downstream workloads run.",
         "steps": [
             "Restrict AcrPush / Contributor on the registry to a minimal set of CI/CD identities.",
@@ -881,9 +919,9 @@ KB: dict[str, dict] = {
         "detection": "Count distinct principals with AcrPush or a push-capable role on each Azure Container Registry; a high count on one registry is this finding.",
     },
     "AZ-RBAC-016": {
-        "summary": "A principal holds a write-capable Azure role at the tenant-root management group - the apex scope that controls everything.",
-        "why": "The root management group sits above every management group, subscription and resource in the tenant, and role assignments there are inherited all the way down. Owner / Contributor / User Access Administrator (or a custom role) at the root is therefore whole-tenant control from a single assignment - the largest possible blast radius in Azure RBAC, and the assignment least likely to be noticed because most reviews look at subscriptions, not the root.",
-        "scenario": "An attacker who compromises a principal with Owner at the root management group inherits Owner on every current and future subscription in the tenant at once - no per-subscription escalation needed - and can read, modify, or destroy anything, anywhere.",
+        "summary": "A principal holds a write-capable Azure role at the tenant-root management group, the apex scope that controls everything.",
+        "why": "The root management group sits above every management group, subscription and resource in the tenant, and role assignments there are inherited all the way down. Owner / Contributor / User Access Administrator (or a custom role) at the root is therefore whole-tenant control from a single assignment, the largest possible blast radius in Azure RBAC, and the assignment least likely to be noticed because most reviews look at subscriptions, not the root.",
+        "scenario": "An attacker who compromises a principal with Owner at the root management group inherits Owner on every current and future subscription in the tenant at once, no per-subscription escalation needed, and can read, modify, or destroy anything, anywhere.",
         "impact": "Whole-tenant control (or whatever a custom role grants, everywhere) from one root-scope assignment.",
         "steps": [
             "Remove standing role assignments at the tenant-root management group.",
@@ -896,7 +934,7 @@ KB: dict[str, dict] = {
     "AZ-GRP-007": {
         "summary": "A group is nested inside a Tier-0 group, so its members transitively inherit Tier-0 privilege.",
         "why": "Nested group membership inherits the parent's roles: every member of the child group effectively holds the Tier-0 privilege of the parent. Because a review of the Tier-0 group's DIRECT members does not show the child group's membership, the inherited privilege hides one level down, and anyone who can expand the child group silently expands Tier-0 without touching the crown-jewel group at all.",
-        "scenario": "An attacker adds themselves (or a puppet) to the child group - a softer target than the Tier-0 group itself - and through the nesting inherits the parent's Tier-0 role, escalating without ever modifying the protected group.",
+        "scenario": "An attacker adds themselves (or a puppet) to the child group, a softer target than the Tier-0 group itself, and through the nesting inherits the parent's Tier-0 role, escalating without ever modifying the protected group.",
         "impact": "Tier-0 privilege inherited by every member of a less-protected nested group.",
         "steps": [
             "Remove the nesting, or govern the child group as Tier-0 (tight membership, accountable owners, access reviews).",
@@ -907,7 +945,7 @@ KB: dict[str, dict] = {
     },
     "AZ-GRP-008": {
         "summary": "A privileged group uses dynamic membership keyed on a user-settable attribute, so a user can self-join by editing their own profile.",
-        "why": "Dynamic groups auto-add users whose attributes match a rule. When a privileged (Tier-0 / role-assignable / role-holding) group's rule keys on an attribute the user can set on their own profile - display name, mail, other-mails, job title, department, city - a user who edits that attribute makes themselves match and is added automatically, inheriting the group's privilege with no administrator ever approving it.",
+        "why": "Dynamic groups auto-add users whose attributes match a rule. When a privileged (Tier-0 / role-assignable / role-holding) group's rule keys on an attribute the user can set on their own profile, display name, mail, other-mails, job title, department, city, a user who edits that attribute makes themselves match and is added automatically, inheriting the group's privilege with no administrator ever approving it.",
         "scenario": "An attacker who controls a low-privilege account edits their own display name (or other self-service attribute) to satisfy a privileged group's membership rule; Entra adds them to the group on the next evaluation and they inherit its role.",
         "impact": "Self-service escalation into a privileged group with no admin action.",
         "steps": [
@@ -919,8 +957,8 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-027": {
         "summary": "A guest (external / B2B) user owns an application registration or service principal.",
-        "why": "An application owner can add a credential - a client secret or certificate - to the app and then authenticate as it, gaining everything the app's identity can do. When the owner is a guest, an identity governed by another organisation (whose credentials, MFA and lifecycle you do not control) can take the app over. This crosses the external-to-internal trust boundary through ownership rather than a role grant, so it is easy to miss.",
-        "scenario": "An attacker compromises the guest's home-tenant account, uses its ownership of the app to add a new client secret, and authenticates as the application - inheriting its Graph permissions and Azure roles inside your tenant.",
+        "why": "An application owner can add a credential, a client secret or certificate, to the app and then authenticate as it, gaining everything the app's identity can do. When the owner is a guest, an identity governed by another organisation (whose credentials, MFA and lifecycle you do not control) can take the app over. This crosses the external-to-internal trust boundary through ownership rather than a role grant, so it is easy to miss.",
+        "scenario": "An attacker compromises the guest's home-tenant account, uses its ownership of the app to add a new client secret, and authenticates as the application, inheriting its Graph permissions and Azure roles inside your tenant.",
         "impact": "External takeover of an in-tenant application identity and everything it can reach.",
         "steps": [
             "Remove guest owners from all application registrations and service principals.",
@@ -931,7 +969,7 @@ KB: dict[str, dict] = {
     },
     "AZ-HYG-006": {
         "summary": "A disabled user account still owns an application or service principal.",
-        "why": "Ownership survives account disablement. The app now has no active accountable owner (so its credentials go un-rotated and its purpose un-reviewed), and if the disabled account is ever re-enabled - an offboarding reversal, a mistaken bulk operation, or a compromise of the identity through a residual path - it immediately regains the power to add a credential and authenticate as the app. It is both a governance gap and a latent takeover path.",
+        "why": "Ownership survives account disablement. The app now has no active accountable owner (so its credentials go un-rotated and its purpose un-reviewed), and if the disabled account is ever re-enabled, an offboarding reversal, a mistaken bulk operation, or a compromise of the identity through a residual path, it immediately regains the power to add a credential and authenticate as the app. It is both a governance gap and a latent takeover path.",
         "scenario": "A departed employee's disabled account still owns a service principal; the account is re-enabled during an incident or migration, and the attacker who now controls it adds a secret to the SP and authenticates as it.",
         "impact": "No accountable owner today, and instant app takeover if the disabled account is reactivated.",
         "steps": [
@@ -942,10 +980,10 @@ KB: dict[str, dict] = {
         "detection": "Cross-reference application/service-principal owners against accountEnabled == false.",
     },
     "AZ-RBAC-017": {
-        "summary": "A principal holds Reader at management-group scope - a complete, authenticated map of the estate.",
-        "why": "Reader changes nothing, so it is treated as harmless and over-granted to monitoring and automation. But at management-group scope it can enumerate every subscription, resource, configuration, network layout, identity and role assignment beneath it. Compromise of such a principal hands an attacker the full reconnaissance that precedes a targeted attack - where the crown jewels are, how they are reachable, and which identities to hunt - without tripping any change-based control.",
+        "summary": "A principal holds Reader at management-group scope, a complete, authenticated map of the estate.",
+        "why": "Reader changes nothing, so it is treated as harmless and over-granted to monitoring and automation. But at management-group scope it can enumerate every subscription, resource, configuration, network layout, identity and role assignment beneath it. Compromise of such a principal hands an attacker the full reconnaissance that precedes a targeted attack, where the crown jewels are, how they are reachable, and which identities to hunt, without tripping any change-based control.",
         "scenario": "An attacker compromises a broadly-scoped monitoring service principal and, with its Reader, inventories the whole tenant to plan the real attack: which subscriptions hold sensitive data, which VMs carry managed identities, which vaults hold secrets.",
-        "impact": "Full estate reconnaissance from a single read-only identity - the map an attacker needs.",
+        "impact": "Full estate reconnaissance from a single read-only identity, the map an attacker needs.",
         "steps": [
             "Scope read access to the specific management groups or subscriptions each workload needs.",
             "Prefer purpose-built roles (Security Reader, Monitoring Reader) over blanket Reader at a high scope.",
@@ -966,9 +1004,9 @@ KB: dict[str, dict] = {
         "detection": "List effective holders of User Administrator, Global Administrator and Privileged Authentication Administrator; alert on bulk credential/account-state changes.",
     },
     "AZ-APP-028": {
-        "summary": "An application registered in another tenant holds an app-only (application) Microsoft Graph permission in this tenant - it acts on your directory/data with no signed-in user.",
-        "why": "Application permissions are exercised by the app authenticating as itself, with its own credential held in its home tenant - no user, no interaction. When that app is external (multi-tenant) and the permission is high-impact (Directory.ReadWrite.All, RoleManagement.ReadWrite.Directory, Mail.ReadWrite.All, Files/Sites.ReadWrite.All), a third-party SaaS - or anyone who compromises it - can write to your directory or read and modify all mail and files across the organisation, silently. You hold no credential to revoke; only the grant stands between the external app and your tenant. This is distinct from delegated consent, which at least requires one of your users to sign in.",
-        "scenario": "A breached SaaS vendor (or an over-scoped integration) uses its standing app-only Directory.ReadWrite.All to add a credential to a privileged app, or its Mail.ReadWrite.All to exfiltrate and tamper with mail tenant-wide - all app-only, with nothing of yours to disable but the consent.",
+        "summary": "An application registered in another tenant holds an app-only (application) Microsoft Graph permission in this tenant, it acts on your directory/data with no signed-in user.",
+        "why": "Application permissions are exercised by the app authenticating as itself, with its own credential held in its home tenant, no user, no interaction. When that app is external (multi-tenant) and the permission is high-impact (Directory.ReadWrite.All, RoleManagement.ReadWrite.Directory, Mail.ReadWrite.All, Files/Sites.ReadWrite.All), a third-party SaaS, or anyone who compromises it, can write to your directory or read and modify all mail and files across the organisation, silently. You hold no credential to revoke; only the grant stands between the external app and your tenant. This is distinct from delegated consent, which at least requires one of your users to sign in.",
+        "scenario": "A breached SaaS vendor (or an over-scoped integration) uses its standing app-only Directory.ReadWrite.All to add a credential to a privileged app, or its Mail.ReadWrite.All to exfiltrate and tamper with mail tenant-wide, all app-only, with nothing of yours to disable but the consent.",
         "impact": "Silent, user-less directory writes or mass mail/file access by an external application.",
         "steps": [
             "Review every application-permission grant to a foreign / multi-tenant service principal.",
@@ -980,8 +1018,8 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-029": {
         "summary": "The same certificate or key credential is registered on two or more distinct applications / service principals.",
-        "why": "A shared credential collapses the identities that use it into one blast radius: a single stolen private key authenticates as every application that carries it. It also breaks safe rotation - replacing the key requires changing it on all of them simultaneously - and obscures ownership, since no one identity clearly owns the secret. Credential isolation (one unique credential per identity) is the invariant this violates.",
-        "scenario": "An attacker recovers one private key from a pipeline or config and, finding it registered on several service principals, authenticates as each in turn - the compromise of one credential silently becomes the compromise of every identity that shares it.",
+        "why": "A shared credential collapses the identities that use it into one blast radius: a single stolen private key authenticates as every application that carries it. It also breaks safe rotation, replacing the key requires changing it on all of them simultaneously, and obscures ownership, since no one identity clearly owns the secret. Credential isolation (one unique credential per identity) is the invariant this violates.",
+        "scenario": "An attacker recovers one private key from a pipeline or config and, finding it registered on several service principals, authenticates as each in turn, the compromise of one credential silently becomes the compromise of every identity that shares it.",
         "impact": "One stolen credential authenticates as multiple application identities.",
         "steps": [
             "Issue a unique certificate/key per application and service principal.",
@@ -992,8 +1030,8 @@ KB: dict[str, dict] = {
     },
     "AZ-MI-002": {
         "summary": "One user-assigned managed identity with a privileged Azure role is attached to many resources.",
-        "why": "A managed identity attached to several resources is reachable from every one of them via IMDS. When that shared identity also holds Owner, Contributor, or User Access Administrator, code execution on the weakest resource in the set - one unpatched VM, one injectable function - yields the privileged role and therefore access to everything the identity can reach. Sharing collapses many independent blast radii into one: the security of all the resources is now only as good as the least secure among them.",
-        "scenario": "An attacker gets code execution on the least-defended resource sharing the identity (an old VM, a vulnerable web app), reads a token from IMDS, and now acts as a Contributor/Owner across every resource and subscription the identity is assigned to - pivoting far beyond the host they actually compromised.",
+        "why": "A managed identity attached to several resources is reachable from every one of them via IMDS. When that shared identity also holds Owner, Contributor, or User Access Administrator, code execution on the weakest resource in the set, one unpatched VM, one injectable function, yields the privileged role and therefore access to everything the identity can reach. Sharing collapses many independent blast radii into one: the security of all the resources is now only as good as the least secure among them.",
+        "scenario": "An attacker gets code execution on the least-defended resource sharing the identity (an old VM, a vulnerable web app), reads a token from IMDS, and now acts as a Contributor/Owner across every resource and subscription the identity is assigned to, pivoting far beyond the host they actually compromised.",
         "impact": "A single workload identity turns a compromise of any one attached resource into privileged access across all of them.",
         "steps": [
             "Give each workload its own least-privilege managed identity instead of sharing one across resources.",
@@ -1005,11 +1043,11 @@ KB: dict[str, dict] = {
     },
     "AZ-IDENT-013": {
         "summary": "A disabled account still holds PIM eligibility to activate a Tier-0 role.",
-        "why": "Disabling an account is supposed to end its access, but a PIM eligible assignment is a standing property of the account that disabling does not remove. The account is therefore one state change away from Tier-0: re-enable it - through an offboarding reversal, a helpdesk error, or an attacker who recovers the identity - and a single PIM activation restores Global-Administrator-class privilege. The path hides in a blind spot: an active-roles review shows nothing, and a 'disabled accounts are harmless' assumption skips it entirely.",
-        "scenario": "A deprovisioned employee's account is re-enabled (a mistaken ticket, or an attacker who takes over the stale identity), the eligible Tier-0 role is self-activated through PIM, and the account is suddenly a full administrator - with none of the original offboarding controls catching it.",
+        "why": "Disabling an account is supposed to end its access, but a PIM eligible assignment is a standing property of the account that disabling does not remove. The account is therefore one state change away from Tier-0: re-enable it, through an offboarding reversal, a helpdesk error, or an attacker who recovers the identity, and a single PIM activation restores Global-Administrator-class privilege. The path hides in a blind spot: an active-roles review shows nothing, and a 'disabled accounts are harmless' assumption skips it entirely.",
+        "scenario": "A deprovisioned employee's account is re-enabled (a mistaken ticket, or an attacker who takes over the stale identity), the eligible Tier-0 role is self-activated through PIM, and the account is suddenly a full administrator, with none of the original offboarding controls catching it.",
         "impact": "A silent persistence path to Tier-0 that survives account disablement and both common review methods.",
         "steps": [
-            "Remove all PIM eligibility from an account as part of offboarding - disabling the account is not sufficient.",
+            "Remove all PIM eligibility from an account as part of offboarding, disabling the account is not sufficient.",
             "Delete the account once retention rules allow, rather than leaving it disabled with residual eligibility.",
             "Reconcile PIM eligible assignments against account state so no disabled principal retains a Tier-0 activation path.",
             "Alert on PIM activation attempts by, or re-enablement of, an account that holds Tier-0 eligibility.",
@@ -1018,21 +1056,21 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-020": {
         "summary": "A third-party vendor's multi-tenant app holds tenant-wide Graph application permissions to read or write organisation data.",
-        "why": "Application permissions granted to an external (foreign-tenant) enterprise app apply across the whole tenant and require no signed-in user. The vendor - or anyone who compromises the vendor's platform - can exercise that access at any time, silently, against every mailbox, file, site, or directory object in scope. These grants are typically approved once at onboarding and never revisited, so a broad permission like Directory.ReadWrite.All or Mail.ReadWrite.All to a SaaS integration becomes permanent standing access that no internal account review would surface.",
-        "scenario": "An attacker compromises the third-party SaaS provider (or abuses an over-broad consent) and uses the app's existing application permission to read mail, exfiltrate files, or write directory objects across the tenant - no phishing, no credential theft inside the tenant, and nothing that looks like a compromised employee account.",
+        "why": "Application permissions granted to an external (foreign-tenant) enterprise app apply across the whole tenant and require no signed-in user. The vendor, or anyone who compromises the vendor's platform, can exercise that access at any time, silently, against every mailbox, file, site, or directory object in scope. These grants are typically approved once at onboarding and never revisited, so a broad permission like Directory.ReadWrite.All or Mail.ReadWrite.All to a SaaS integration becomes permanent standing access that no internal account review would surface.",
+        "scenario": "An attacker compromises the third-party SaaS provider (or abuses an over-broad consent) and uses the app's existing application permission to read mail, exfiltrate files, or write directory objects across the tenant, no phishing, no credential theft inside the tenant, and nothing that looks like a compromised employee account.",
         "impact": "Standing, tenant-wide external access to organisation data or directory that outlives any employee and is rarely re-reviewed.",
         "steps": [
             "Review every external application's granted permissions under Enterprise applications → Permissions and revoke any the vendor does not demonstrably need.",
             "Prefer delegated (user-scoped) permissions over application permissions for third-party apps.",
-            "Scope data access where the platform allows it - e.g. application access policies restricting Mail permissions to specific mailboxes.",
+            "Scope data access where the platform allows it, e.g. application access policies restricting Mail permissions to specific mailboxes.",
             "Put third-party apps holding directory or data write permissions on a recurring access review with an accountable owner.",
         ],
         "detection": "Enumerate service principals whose appOwnerOrganizationId is a foreign tenant and that hold application Graph permissions; alert on new admin consents to multi-tenant apps for high-impact scopes (Directory/Mail/Files/Sites .ReadWrite.All).",
     },
     "AZ-IDENT-012": {
         "summary": "One principal actively holds six or more distinct Entra directory roles.",
-        "why": "The effective privilege of an account is the union of every role it holds, so a principal with many roles can do far more than any single job requires - and often more than anyone realises. Standing (always-active) assignments mean all of that privilege is live at once, making the account a concentrated, high-value target whose compromise hands an attacker a large, pre-assembled toolkit. Role sprawl also defeats review: no one can reason about what a 13-role account can actually reach.",
-        "scenario": "An attacker who compromises one over-assigned account inherits the combined power of every role at once - password resets, group management, application management, conditional-access changes - and can chain them into tenant takeover without needing any further escalation.",
+        "why": "The effective privilege of an account is the union of every role it holds, so a principal with many roles can do far more than any single job requires, and often more than anyone realises. Standing (always-active) assignments mean all of that privilege is live at once, making the account a concentrated, high-value target whose compromise hands an attacker a large, pre-assembled toolkit. Role sprawl also defeats review: no one can reason about what a 13-role account can actually reach.",
+        "scenario": "An attacker who compromises one over-assigned account inherits the combined power of every role at once, password resets, group management, application management, conditional-access changes, and can chain them into tenant takeover without needing any further escalation.",
         "impact": "A single account whose combined roles approach or reach tenant-admin capability, always live and hard to review.",
         "steps": [
             "Reduce each principal to the minimum roles its function needs; remove roles that duplicate or exceed the job.",
@@ -1044,9 +1082,9 @@ KB: dict[str, dict] = {
     },
     "AZ-RBAC-013": {
         "summary": "One principal holds Owner or User Access Administrator across three or more subscriptions.",
-        "why": "Owner and User Access Administrator can both assign any RBAC role, including granting the holder more access - self-escalating control. Holding either across many subscriptions means one credential is a standing skeleton key to a wide blast radius: compromise it once and an attacker can re-grant themselves full access in every one of those subscriptions, turning a single-workload foothold into estate-wide impact.",
-        "scenario": "An attacker compromises the principal (a stolen secret, a phished admin, a token from a workload it runs) and uses its User Access Administrator / Owner rights to assign Owner to an attacker-controlled identity across every subscription it spans - persistent, full control that survives rotating the original credential.",
-        "impact": "Standing self-escalating control over many subscriptions from a single identity - the classic single-compromise-to-estate-wide pivot.",
+        "why": "Owner and User Access Administrator can both assign any RBAC role, including granting the holder more access, self-escalating control. Holding either across many subscriptions means one credential is a standing skeleton key to a wide blast radius: compromise it once and an attacker can re-grant themselves full access in every one of those subscriptions, turning a single-workload foothold into estate-wide impact.",
+        "scenario": "An attacker compromises the principal (a stolen secret, a phished admin, a token from a workload it runs) and uses its User Access Administrator / Owner rights to assign Owner to an attacker-controlled identity across every subscription it spans, persistent, full control that survives rotating the original credential.",
+        "impact": "Standing self-escalating control over many subscriptions from a single identity, the classic single-compromise-to-estate-wide pivot.",
         "steps": [
             "Remove Owner / User Access Administrator wherever it is not essential; scope any remaining grant to the narrowest resource group rather than the whole subscription.",
             "Use PIM eligible assignment for cross-subscription administrative duties so the access is just-in-time, not standing.",
@@ -1056,10 +1094,10 @@ KB: dict[str, dict] = {
         "detection": "Aggregate RBAC role assignments per principal across subscriptions and flag any holding Owner/UAA on three or more. Monitor 'Create role assignment' events granting Owner/UAA at subscription scope.",
     },
     "AZ-APP-019": {
-        "summary": "A federated identity credential trusts external tokens far too broadly - a wildcard subject or a foreign Entra tenant as issuer.",
-        "why": "Workload-identity federation replaces a stored secret with trust in an external issuer+subject pair. The security of the identity is now exactly the tightness of that pair. A wildcard subject like 'repo:org/*' trusts every repository in a GitHub organisation - any repo an attacker can create or compromise in that org can request a token as this application. A cross-tenant Entra issuer means an identity in a directory you do not control can mint tokens as this application. Neither leaves a secret to rotate or a sign-in anomaly that stands out, so the over-broad trust persists silently.",
-        "scenario": "An attacker who can push to (or create) any repository in the trusted GitHub org - or who controls an identity in the trusted foreign tenant - requests an OIDC/Entra token for the federated subject. Azure exchanges it for an access token as the application, and the attacker now acts as that identity with no credential theft and nothing to revoke.",
-        "impact": "Token issuance as the application by a party outside the tenant's control - a credential-free, low-visibility path to whatever the identity can reach.",
+        "summary": "A federated identity credential trusts external tokens far too broadly, a wildcard subject or a foreign Entra tenant as issuer.",
+        "why": "Workload-identity federation replaces a stored secret with trust in an external issuer+subject pair. The security of the identity is now exactly the tightness of that pair. A wildcard subject like 'repo:org/*' trusts every repository in a GitHub organisation, any repo an attacker can create or compromise in that org can request a token as this application. A cross-tenant Entra issuer means an identity in a directory you do not control can mint tokens as this application. Neither leaves a secret to rotate or a sign-in anomaly that stands out, so the over-broad trust persists silently.",
+        "scenario": "An attacker who can push to (or create) any repository in the trusted GitHub org, or who controls an identity in the trusted foreign tenant, requests an OIDC/Entra token for the federated subject. Azure exchanges it for an access token as the application, and the attacker now acts as that identity with no credential theft and nothing to revoke.",
+        "impact": "Token issuance as the application by a party outside the tenant's control, a credential-free, low-visibility path to whatever the identity can reach.",
         "steps": [
             "Replace any wildcard subject with the exact external workload: 'repo:owner/name:ref:refs/heads/<branch>' or ':environment:<env>' for GitHub Actions.",
             "Remove any federated credential whose issuer is a foreign Entra tenant unless the cross-tenant trust is explicitly required and documented.",
@@ -1070,21 +1108,21 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-018": {
         "summary": "Two or more distinct applications share one display name, and at least one carries a credential or a dangerous Graph permission.",
-        "why": "Duplicate registrations are almost never intentional - an app gets re-created because the original was forgotten, or a manifest is copy-pasted - and each duplicate is a full, independent identity with its own secrets and its own consented permissions. They defeat review by hiding in plain sight: an admin auditing 'Synology Active Backup for M365' sees a single familiar entry and moves on, never noticing that four exist and that one of them holds Directory.ReadWrite.All. That gap is exactly where a stale or over-permissioned duplicate survives every cleanup.",
-        "scenario": "An attacker (or a careless integration) uses the least-watched of the duplicates - the one nobody remembers creating. It still holds a live secret and the same directory-write permission as its siblings, so it authenticates and acts with full privilege while the security team's attention stays on the single entry they know about. Rotating or removing 'the' app misses the duplicate, and access persists.",
+        "why": "Duplicate registrations are almost never intentional, an app gets re-created because the original was forgotten, or a manifest is copy-pasted, and each duplicate is a full, independent identity with its own secrets and its own consented permissions. They defeat review by hiding in plain sight: an admin auditing 'Synology Active Backup for M365' sees a single familiar entry and moves on, never noticing that four exist and that one of them holds Directory.ReadWrite.All. That gap is exactly where a stale or over-permissioned duplicate survives every cleanup.",
+        "scenario": "An attacker (or a careless integration) uses the least-watched of the duplicates, the one nobody remembers creating. It still holds a live secret and the same directory-write permission as its siblings, so it authenticates and acts with full privilege while the security team's attention stays on the single entry they know about. Rotating or removing 'the' app misses the duplicate, and access persists.",
         "impact": "A low-visibility credential and persistence surface: privileged access that hides behind a trusted name and survives reviews aimed at the canonical registration.",
         "steps": [
             "Confirm which registration is actually in use (check sign-in logs per appId), then delete the unused duplicates.",
             "Rotate the surviving app's credentials once the duplicates are removed, in case a duplicate's secret was shared.",
             "Enforce a naming standard and review newly created app registrations so duplicate names are caught at creation.",
-            "Prioritise duplicates that hold a dangerous Graph permission (e.g. Directory.ReadWrite.All) or a live secret - those are the immediate escalation surface.",
+            "Prioritise duplicates that hold a dangerous Graph permission (e.g. Directory.ReadWrite.All) or a live secret, those are the immediate escalation surface.",
         ],
         "detection": "Enumerate application registrations grouped by displayName and flag any name backed by more than one appId. Alert on 'Add application' / 'Add service principal' Entra audit events that create an app whose name already exists in the tenant.",
     },
     "AZ-APP-013": {
         "summary": "An application or service principal has an unusually large number of stored credentials.",
         "why": "Each client secret and certificate is an independent path to authenticate as the application. Credential sprawl means nobody knows which secrets are still in use, so none get removed; forgotten secrets stay valid until expiry and are frequently the ones sitting in an old pipeline, a wiki page, or a developer's machine. During incident response, a large credential set makes it far harder to establish which secret was used and to contain the identity without breaking production.",
-        "scenario": "The attacker recovers one older, forgotten secret - from a decommissioned pipeline, a stale config file, or a repository's history. It still authenticates. Because several secrets are valid, defenders rotating 'the' secret miss the one in use, and access persists through the remediation attempt.",
+        "scenario": "The attacker recovers one older, forgotten secret, from a decommissioned pipeline, a stale config file, or a repository's history. It still authenticates. Because several secrets are valid, defenders rotating 'the' secret miss the one in use, and access persists through the remediation attempt.",
         "impact": "Multiple independent, poorly-tracked authentication paths that frustrate both rotation and incident containment.",
         "steps": [
             "Inventory which credential each consumer actually uses, then delete every credential not accounted for.",
@@ -1096,8 +1134,8 @@ KB: dict[str, dict] = {
     },
     "AZ-GRP-004": {
         "summary": "A role-assignable group has no owner, so nobody is accountable for its membership.",
-        "why": "Group ownership is the control that makes membership changes reviewable - the owner is who access reviews notify and who is expected to justify each member. An orphaned group that confers a privileged role has no such reviewer, so additions go unnoticed indefinitely. Orphaned privileged groups are a favoured persistence location precisely because no one is watching them.",
-        "scenario": "The attacker adds an account to the ownerless privileged group. There is no owner to receive an access-review notification or question the change, so the membership - and the role it confers - persists through subsequent reviews.",
+        "why": "Group ownership is the control that makes membership changes reviewable, the owner is who access reviews notify and who is expected to justify each member. An orphaned group that confers a privileged role has no such reviewer, so additions go unnoticed indefinitely. Orphaned privileged groups are a favoured persistence location precisely because no one is watching them.",
+        "scenario": "The attacker adds an account to the ownerless privileged group. There is no owner to receive an access-review notification or question the change, so the membership, and the role it confers, persists through subsequent reviews.",
         "impact": "Unmonitored standing privilege with no accountable reviewer; a durable persistence foothold.",
         "steps": [
             "Assign at least two named owners, and prefer a Tier-0-appropriate owner for a group that confers a privileged role.",
@@ -1121,7 +1159,7 @@ KB: dict[str, dict] = {
     },
     "AZ-STOR-006": {
         "summary": "A storage account does not require secure transfer (HTTPS-only is off).",
-        "why": "With supportsHttpsTrafficOnly disabled, the account answers plaintext HTTP. Any request - and the SAS token or shared key that authorises it - crosses the network unencrypted, so a passive network observer can capture and replay it.",
+        "why": "With supportsHttpsTrafficOnly disabled, the account answers plaintext HTTP. Any request, and the SAS token or shared key that authorises it, crosses the network unencrypted, so a passive network observer can capture and replay it.",
         "scenario": "An attacker sniffing network traffic captures a plaintext request to the account, lifts the SAS token or shared key from it, and reuses that credential to read or write the account's data directly.",
         "impact": "Disclosure of data in transit and theft of long-lived storage credentials, leading to direct data-plane compromise.",
         "steps": [
@@ -1145,8 +1183,8 @@ KB: dict[str, dict] = {
     },
     "AZ-STOR-008": {
         "summary": "A storage account has no Private Endpoint and its public access is not denied.",
-        "why": "Without a Private Endpoint, all traffic to the account uses the public endpoint and the account remains in public DNS and on the public attack surface. A Private Endpoint keeps traffic on the Azure backbone and removes the account from public reachability entirely - the strongest network control for storage. This is defence-in-depth, so it is reported as a best-practice gap rather than an active vulnerability.",
-        "scenario": "Not a direct exploit on its own - it is the missing control that makes a leaked-credential or firewall-misconfiguration scenario reachable from the internet instead of only from inside the private network.",
+        "why": "Without a Private Endpoint, all traffic to the account uses the public endpoint and the account remains in public DNS and on the public attack surface. A Private Endpoint keeps traffic on the Azure backbone and removes the account from public reachability entirely, the strongest network control for storage. This is defence-in-depth, so it is reported as a best-practice gap rather than an active vulnerability.",
+        "scenario": "Not a direct exploit on its own, it is the missing control that makes a leaked-credential or firewall-misconfiguration scenario reachable from the internet instead of only from inside the private network.",
         "impact": "The account stays on the public attack surface; combined with any credential or firewall weakness it is reachable from anywhere.",
         "steps": [
             "Create a Private Endpoint for the account's blob (and file, if used) sub-resources.",
@@ -1158,7 +1196,7 @@ KB: dict[str, dict] = {
     "AZ-KV-007": {
         "summary": "A Key Vault is enabled for VM deployment, so compute can read its secrets without an explicit grant.",
         "why": "enabledForDeployment lets Azure VMs in the subscription pull the vault's certificates and secrets as part of deployment, bypassing the vault's RBAC/access-policy model. The vault's material is then reachable by anyone who can create or control a VM in that subscription, widening the set of principals who effectively hold the secrets.",
-        "scenario": "An attacker with Contributor on the subscription (or on a resource group) creates or reconfigures a VM to reference the vault during deployment and receives its certificates/secrets - without ever appearing in the vault's access list.",
+        "scenario": "An attacker with Contributor on the subscription (or on a resource group) creates or reconfigures a VM to reference the vault during deployment and receives its certificates/secrets, without ever appearing in the vault's access list.",
         "impact": "Secrets and certificates are exposed to the whole compute-control population of the subscription, not just the vault's grantees.",
         "steps": [
             "Set enabledForDeployment=false unless a specific deployment requires it.",
@@ -1170,7 +1208,7 @@ KB: dict[str, dict] = {
     "AZ-KV-008": {
         "summary": "A Key Vault's soft-delete retention is shorter than the 90-day maximum.",
         "why": "Soft-delete retention is the window in which deleted secrets, keys and certificates can be recovered. A short window (7 or 30 days) reduces the time to notice and reverse a malicious or accidental deletion, weakening resilience against a destructive attacker. This is a recoverability best practice rather than an exploitable flaw.",
-        "scenario": "Not a direct exploit - a destructive attacker who gains delete rights removes vault material; a short retention window shortens the time defenders have to detect and recover before the objects are permanently purged.",
+        "scenario": "Not a direct exploit, a destructive attacker who gains delete rights removes vault material; a short retention window shortens the time defenders have to detect and recover before the objects are permanently purged.",
         "impact": "Reduced ability to recover from malicious or accidental deletion of cryptographic material.",
         "steps": [
             "Set softDeleteRetentionInDays to 90.",
@@ -1182,7 +1220,7 @@ KB: dict[str, dict] = {
     "AZ-KV-009": {
         "summary": "A Key Vault has no Private Endpoint and its public access is not denied.",
         "why": "Without a Private Endpoint the vault's management and data-plane endpoints remain on the public network and in public DNS. A Private Endpoint keeps traffic on the Azure backbone and is the strongest network control for a vault; its absence leaves the vault reachable from the internet whenever a credential or firewall weakness exists. Defence-in-depth, so reported as a best-practice gap.",
-        "scenario": "Not a standalone exploit - it is the missing control that makes a leaked-credential or firewall-misconfiguration scenario reachable from the internet rather than only from the private network.",
+        "scenario": "Not a standalone exploit, it is the missing control that makes a leaked-credential or firewall-misconfiguration scenario reachable from the internet rather than only from the private network.",
         "impact": "The vault stays on the public attack surface; combined with any credential or firewall weakness it is reachable from anywhere.",
         "steps": [
             "Add a Private Endpoint for the vault.",
@@ -1194,7 +1232,7 @@ KB: dict[str, dict] = {
     "AZ-VM-001": {
         "summary": "A virtual machine is not configured for Trusted Launch (no Secure Boot / vTPM).",
         "why": "Trusted Launch provides Secure Boot, a virtual TPM and boot integrity monitoring, defending against boot-kits, rootkits and kernel-level tampering, and it underpins guest attestation. A Standard VM has none of these, so a persistence-focused attacker who reaches the VM can install low-level implants that survive reimaging and evade detection. This is a hardening best practice.",
-        "scenario": "Not an initial-access exploit - after compromising a Standard VM, an attacker installs a boot-level rootkit that persists across reboots and OS reinstalls, something Secure Boot + vTPM attestation would detect or prevent.",
+        "scenario": "Not an initial-access exploit, after compromising a Standard VM, an attacker installs a boot-level rootkit that persists across reboots and OS reinstalls, something Secure Boot + vTPM attestation would detect or prevent.",
         "impact": "No boot-integrity defence; low-level, hard-to-detect persistence is possible on a compromised VM.",
         "steps": [
             "Recreate or upgrade the VM as a Trusted Launch (Gen2) VM.",
@@ -1205,7 +1243,7 @@ KB: dict[str, dict] = {
     },
     "AZ-STOR-009": {
         "summary": "A storage account permits object replication to a different Entra tenant.",
-        "why": "allowCrossTenantReplication lets object-replication policies copy blobs from this account to a storage account in another tenant. That is a sanctioned path for data to cross the organizational boundary, so an attacker who can set a replication policy - or a malicious insider - can exfiltrate data through a native, easily-overlooked feature rather than an obvious download.",
+        "why": "allowCrossTenantReplication lets object-replication policies copy blobs from this account to a storage account in another tenant. That is a sanctioned path for data to cross the organizational boundary, so an attacker who can set a replication policy, or a malicious insider, can exfiltrate data through a native, easily-overlooked feature rather than an obvious download.",
         "scenario": "An attacker with rights to configure replication (or an insider) adds an object-replication rule targeting an account they control in a foreign tenant. Blob data then replicates out of the tenant continuously, with no bulk-download signal to trip egress alerts.",
         "impact": "A durable, native data-exfiltration channel out of the tenant.",
         "steps": [
@@ -1218,7 +1256,7 @@ KB: dict[str, dict] = {
     "AZ-KV-010": {
         "summary": "A Key Vault is enabled for ARM template deployment, so templates can read its secrets.",
         "why": "enabledForTemplateDeployment lets Azure Resource Manager retrieve the vault's secrets while deploying a template, bypassing the vault's RBAC/access-policy model. Anyone who can deploy an ARM or Bicep template that references the vault can therefore extract its secrets, widening the effective set of principals who hold them.",
-        "scenario": "An attacker with deployment rights in the subscription submits a template that references the vault's secrets as parameters and reads them back from the deployment - without ever being granted access on the vault itself.",
+        "scenario": "An attacker with deployment rights in the subscription submits a template that references the vault's secrets as parameters and reads them back from the deployment, without ever being granted access on the vault itself.",
         "impact": "Vault secrets are reachable by the whole template-deployment population of the subscription.",
         "steps": [
             "Set enabledForTemplateDeployment=false unless a specific deployment needs it.",
@@ -1229,8 +1267,8 @@ KB: dict[str, dict] = {
     },
     "AZ-LOGIC-001": {
         "summary": "A Logic App workflow is triggered by an inbound HTTP request.",
-        "why": "A Request trigger publishes an externally reachable HTTPS callback endpoint for the workflow. If the workflow performs privileged actions or runs under a managed identity, a caller who obtains the callback URL - or exploits weak SAS/authorization on it - can drive those actions from outside the tenant, turning the workflow into an external entry point.",
-        "scenario": "An attacker discovers or leaks the workflow's callback URL (source control, logs, a captured request) and invokes it directly, causing the workflow's privileged steps to run - potentially acting as its managed identity against other resources.",
+        "why": "A Request trigger publishes an externally reachable HTTPS callback endpoint for the workflow. If the workflow performs privileged actions or runs under a managed identity, a caller who obtains the callback URL, or exploits weak SAS/authorization on it, can drive those actions from outside the tenant, turning the workflow into an external entry point.",
+        "scenario": "An attacker discovers or leaks the workflow's callback URL (source control, logs, a captured request) and invokes it directly, causing the workflow's privileged steps to run, potentially acting as its managed identity against other resources.",
         "impact": "An internet-reachable path into workflow logic and any identity or resource it can reach.",
         "steps": [
             "Restrict the trigger to known IP ranges and require strong SAS/authorization.",
@@ -1241,8 +1279,8 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-030": {
         "summary": "An application admits personal (consumer) Microsoft accounts, not just work/school identities.",
-        "why": "A signInAudience of AzureADandPersonalMicrosoftAccount or PersonalMicrosoftAccount lets any consumer Microsoft account - Outlook.com, Hotmail, Xbox, Skype - authenticate to the application, an unbounded external population. For an internal or privileged app this is almost always an unintended trust boundary that widens who can obtain tokens and consent far beyond the organisation.",
-        "scenario": "An app meant for employees is registered with a personal-account audience. An attacker signs in with a throwaway consumer Microsoft account, obtains a token for the app, and exercises whatever delegated access or consent the app offers - no organisational account or invitation required.",
+        "why": "A signInAudience of AzureADandPersonalMicrosoftAccount or PersonalMicrosoftAccount lets any consumer Microsoft account, Outlook.com, Hotmail, Xbox, Skype, authenticate to the application, an unbounded external population. For an internal or privileged app this is almost always an unintended trust boundary that widens who can obtain tokens and consent far beyond the organisation.",
+        "scenario": "An app meant for employees is registered with a personal-account audience. An attacker signs in with a throwaway consumer Microsoft account, obtains a token for the app, and exercises whatever delegated access or consent the app offers, no organisational account or invitation required.",
         "impact": "The application's sign-in and consent surface is open to every personal Microsoft account on the internet.",
         "steps": [
             "Confirm whether the app genuinely needs to serve consumer accounts.",
@@ -1253,7 +1291,7 @@ KB: dict[str, dict] = {
     },
     "AZ-GRP-009": {
         "summary": "A group synced from on-premises AD is role-assignable or already confers a Tier-0 role.",
-        "why": "When onPremisesSyncEnabled is true the group's membership is mastered in on-premises Active Directory, not Entra. If that group is role-assignable or holds a Tier-0 directory/Azure role, anyone who can edit the on-prem group - or who compromises on-prem AD or the AD Connect sync account - silently gains the cloud privilege, bridging an on-premises compromise straight into Entra Tier-0 and bypassing cloud PIM, MFA and conditional access.",
+        "why": "When onPremisesSyncEnabled is true the group's membership is mastered in on-premises Active Directory, not Entra. If that group is role-assignable or holds a Tier-0 directory/Azure role, anyone who can edit the on-prem group, or who compromises on-prem AD or the AD Connect sync account, silently gains the cloud privilege, bridging an on-premises compromise straight into Entra Tier-0 and bypassing cloud PIM, MFA and conditional access.",
         "scenario": "An attacker who has footholds in on-prem AD adds their account to a synced group that carries a privileged Entra role. At the next sync cycle they inherit Tier-0 in the cloud, with no action or approval on the Entra side.",
         "impact": "On-premises AD compromise converts directly into standing cloud Tier-0 privilege.",
         "steps": [
@@ -1265,7 +1303,7 @@ KB: dict[str, dict] = {
     },
     "AZ-KV-011": {
         "summary": "A Key Vault access policy grants secret/key/certificate access to a guest (external) principal.",
-        "why": "Under the access-policy model a data-plane grant to a guest (external / B2B) identity exposes the vault's secrets, keys and certificates to an account governed by another organisation - outside this tenant's credential, lifecycle and conditional-access controls. If the external identity or its home tenant is compromised, so is the vault's content. Because it is an access policy rather than an Azure RBAC assignment, the RBAC guest-role check does not see it, so the exposure is otherwise unreported.",
+        "why": "Under the access-policy model a data-plane grant to a guest (external / B2B) identity exposes the vault's secrets, keys and certificates to an account governed by another organisation, outside this tenant's credential, lifecycle and conditional-access controls. If the external identity or its home tenant is compromised, so is the vault's content. Because it is an access policy rather than an Azure RBAC assignment, the RBAC guest-role check does not see it, so the exposure is otherwise unreported.",
         "scenario": "A guest was added to a vault's access policy for a one-off collaboration and never removed. Their external account is later phished; the attacker reads every secret and key the policy granted, straight from the external tenant.",
         "impact": "Key Vault secrets and keys are readable by an identity outside the organisation's control.",
         "steps": [
@@ -1288,9 +1326,9 @@ KB: dict[str, dict] = {
         "detection": "Correlate directory createdDateTime with Tier-0 role holders; alert when an account gains a Tier-0 role within days of creation.",
     },
     "AZ-IDENT-020": {
-        "summary": "Every human Global Administrator is a directory-synced (hybrid) account - no cloud-only break-glass.",
+        "summary": "Every human Global Administrator is a directory-synced (hybrid) account, no cloud-only break-glass.",
         "why": "When all Global Admins are synced from on-premises Active Directory, the cloud tenant inherits the on-prem blast radius: compromising on-prem AD or the AD Connect sync account yields Global Admin, and there is no independent cloud-only account to detect, contain or recover from it. Microsoft's emergency-access guidance requires cloud-only break-glass Global Admins for exactly this reason.",
-        "scenario": "An attacker who owns on-premises AD (a common DA-to-cloud path) finds that every cloud Global Admin is synced, so they already control all of them - and the defender has no cloud-only admin to lock them out with.",
+        "scenario": "An attacker who owns on-premises AD (a common DA-to-cloud path) finds that every cloud Global Admin is synced, so they already control all of them, and the defender has no cloud-only admin to lock them out with.",
         "impact": "On-premises compromise converts directly to unrecoverable tenant-wide control; no independent recovery path.",
         "steps": [
             "Create at least two cloud-only, non-synced emergency-access Global Admin accounts.",
@@ -1301,19 +1339,19 @@ KB: dict[str, dict] = {
     },
     "AZ-GRP-010": {
         "summary": "A publicly-joinable Microsoft 365 group confers a privileged role.",
-        "why": "A Microsoft 365 group with Public visibility can be joined by any member of the organisation with no owner approval. If that group carries a Tier-0 or Azure/directory role, anyone in the tenant can self-join and inherit the privilege - an unguarded self-service path to elevated access.",
+        "why": "A Microsoft 365 group with Public visibility can be joined by any member of the organisation with no owner approval. If that group carries a Tier-0 or Azure/directory role, anyone in the tenant can self-join and inherit the privilege, an unguarded self-service path to elevated access.",
         "scenario": "A low-privileged user notices (or an attacker enumerates) a Public group that holds a privileged role, joins it themselves in one click, and immediately gains the role's access without any approval or admin action.",
         "impact": "Any organisation member can self-elevate into whatever privilege the group confers.",
         "steps": [
             "Change the group's visibility to Private so membership requires owner approval.",
-            "Preferably do not confer privilege through a Microsoft 365 group at all - use a security / role-assignable group with assigned membership under PIM.",
+            "Preferably do not confer privilege through a Microsoft 365 group at all, use a security / role-assignable group with assigned membership under PIM.",
             "Audit current members added while the group was public.",
         ],
         "detection": "Cross-reference groups with visibility == 'Public' against groups holding directory/Azure roles or tagged Tier-0.",
     },
     "AZ-HYG-007": {
         "summary": "A disabled service principal still holds a Tier-0 role or dangerous Graph permission.",
-        "why": "A disabled service principal cannot authenticate today, but its privileged authorization is still attached. An owner - or an attacker who can flip accountEnabled back on - re-enables it and instantly regains the privilege, with none of the scrutiny a fresh grant would attract. Disabled principals are also commonly skipped in access reviews, so the standing grant lingers unnoticed.",
+        "why": "A disabled service principal cannot authenticate today, but its privileged authorization is still attached. An owner, or an attacker who can flip accountEnabled back on, re-enables it and instantly regains the privilege, with none of the scrutiny a fresh grant would attract. Disabled principals are also commonly skipped in access reviews, so the standing grant lingers unnoticed.",
         "scenario": "An old automation SP is disabled but keeps Application.ReadWrite.All. An attacker who compromises its owner re-enables the SP, adds a credential, and uses the retained permission tenant-wide.",
         "impact": "A dormant principal retains standing tenant privilege that can be reactivated without review.",
         "steps": [
@@ -1325,7 +1363,7 @@ KB: dict[str, dict] = {
     },
     "AZ-PATH-003": {
         "summary": "A disabled account is still one abuse-edge away from Tier-0.",
-        "why": "Azure and Entra do not strip RBAC, group-membership-management rights, app ownership, role-grant permissions or password-reset capability when an account is disabled. A disabled principal that retains a one-hop escalation primitive into a Tier-0 target - add a credential to a Tier-0 SP, add itself to a Tier-0 group, grant a role, self-escalate RBAC, or reset a Tier-0 principal's password - is therefore a dormant, single-hop path to tenant control. Re-enablement is a low-friction operation (a help-desk mistake, a stale on-prem sync that shows the account active, or an insider/attacker deliberately flipping it back), and disabled identities are routinely skipped in access reviews, so the path lingers unseen.",
+        "why": "Azure and Entra do not strip RBAC, group-membership-management rights, app ownership, role-grant permissions or password-reset capability when an account is disabled. A disabled principal that retains a one-hop escalation primitive into a Tier-0 target, add a credential to a Tier-0 SP, add itself to a Tier-0 group, grant a role, self-escalate RBAC, or reset a Tier-0 principal's password, is therefore a dormant, single-hop path to tenant control. Re-enablement is a low-friction operation (a help-desk mistake, a stale on-prem sync that shows the account active, or an insider/attacker deliberately flipping it back), and disabled identities are routinely skipped in access reviews, so the path lingers unseen.",
         "scenario": "A contractor account is disabled at offboarding but its ownership of a Tier-0 CI/CD service principal (or its membership-add rights on a privileged group) is never revoked. Months later the account is re-enabled by a sync glitch or a compromised admin; the actor immediately mints a credential for the Tier-0 SP or self-adds to the group and reaches Tier-0 in one step.",
         "impact": "A single re-enable restores a direct path to Tier-0, bypassing the review that a fresh grant would attract.",
         "steps": [
@@ -1338,7 +1376,7 @@ KB: dict[str, dict] = {
     "AZ-APP-031": {
         "summary": "An application authenticates with a client secret and has no certificate credential.",
         "why": "A client secret is a long bearer string with no proof-of-possession: anyone who reads it (from source, a CI variable, a config file, a log) can authenticate as the application. Certificates are far harder to exfiltrate, support cleaner rotation, and are the credential type Microsoft and the CIS Azure Foundations Benchmark recommend for application authentication. This is a hardening/best-practice gap, not an active compromise.",
-        "scenario": "A client secret is committed to a repo or pasted into a pipeline variable and later leaked; an attacker uses it to obtain tokens as the application and exercise whatever it can access - with nothing to distinguish them from the legitimate app.",
+        "scenario": "A client secret is committed to a repo or pasted into a pipeline variable and later leaked; an attacker uses it to obtain tokens as the application and exercise whatever it can access, with nothing to distinguish them from the legitimate app.",
         "impact": "Wider, harder-to-detect credential-theft surface than certificate-based auth.",
         "steps": [
             "Register a certificate credential on the application (or adopt a federated/workload identity where the platform supports it).",
@@ -1349,8 +1387,8 @@ KB: dict[str, dict] = {
     },
     "AZ-KV-012": {
         "summary": "One Key Vault grants direct data-plane access to an unusually large number of principals.",
-        "why": "When a single vault's access policies name many distinct principals, every one of them can read the vault's secrets, keys and certificates - especially under the legacy access-policy model, whose grants are coarse (get/list/all) and vault-wide rather than per-secret. The vault becomes a high-value, low-effort target: compromising ANY one of the accessors yields the entire secret inventory, and a large accessor list makes least-privilege review impractical and masks over-grants.",
-        "scenario": "A shared dev vault accumulates 78 accessors (users, a large group, and many service principals) over time. An attacker who phishes any single one of those identities, or compromises any one of the service principals, reads every secret the vault holds - connection strings, API keys and certificates used by numerous downstream services.",
+        "why": "When a single vault's access policies name many distinct principals, every one of them can read the vault's secrets, keys and certificates, especially under the legacy access-policy model, whose grants are coarse (get/list/all) and vault-wide rather than per-secret. The vault becomes a high-value, low-effort target: compromising ANY one of the accessors yields the entire secret inventory, and a large accessor list makes least-privilege review impractical and masks over-grants.",
+        "scenario": "A shared dev vault accumulates 78 accessors (users, a large group, and many service principals) over time. An attacker who phishes any single one of those identities, or compromises any one of the service principals, reads every secret the vault holds, connection strings, API keys and certificates used by numerous downstream services.",
         "impact": "The vault's entire secret inventory is exposed to a broad population; blast radius equals the union of all accessors' exposure.",
         "steps": [
             "Reduce the accessor list to the minimum set of identities that genuinely need the secrets.",

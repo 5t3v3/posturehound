@@ -1,7 +1,7 @@
 """AI-generated findings, with the deterministic rule engine as a safety net.
 
 Design: the AI is the analyst. It receives the deterministic fact pack
-(facts.py) - never raw AzureHound files - and generates the findings: entry
+(facts.py), never raw AzureHound files, and generates the findings: entry
 points, misconfigurations, lateral movement, privilege escalation. Every
 entity/edge it cites is validated against the fact pack (ai_findings.py); a
 finding that references anything not in the tenant is rejected outright.
@@ -92,11 +92,14 @@ def _generate_executive_summary(findings: list[dict], score: dict,
         sev = score.get("severity_counts", {})
         # Exclude attack-path findings, exactly as the badges and the score do. Including
         # them let the model count 291 path findings as Criticals and open with "300
-        # critical weaknesses" directly above a badge reading "9 critical" - the single
+        # critical weaknesses" directly above a badge reading "9 critical", the single
         # most visible contradiction the report could contain. Paths are summarised
         # separately below from their own count.
-        scored = [f for f in findings if f.get("source") != "path_consolidation"]
-        n_paths = len(findings) - len(scored)
+        from . import report as _report
+        _thr = store.get_settings().get("ai_lead_confidence", 50)
+        scored = [f for f in findings
+                  if f.get("source") != "path_consolidation" and not _report.is_ai_lead(f, _thr)]
+        n_paths = sum(1 for f in findings if f.get("source") == "path_consolidation")
         top = [f for f in scored if f.get("severity") in ("Critical", "High")][:4]
         top_titles = "; ".join(
             (f.get("title", "") or "")[:120].replace("\n", " ") for f in top
@@ -106,18 +109,18 @@ def _generate_executive_summary(findings: list[dict], score: dict,
                      f"are NOT part of the finding counts above." if n_paths else "")
         prompt = (
             f"You are a senior security consultant writing a 3-5 sentence executive summary "
-            f"for a board-level audience - no technical jargon, no bullet points, plain prose only.\n\n"
+            f"for a board-level audience, no technical jargon, no bullet points, plain prose only.\n\n"
             f"Tenant posture grade: {grade} ({sc}/100).\n"
-            f"THESE ARE THE ONLY FINDING COUNTS - use them verbatim and invent no others:\n"
+            f"THESE ARE THE ONLY FINDING COUNTS, use them verbatim and invent no others:\n"
             f"  Critical: {sev.get('Critical',0)}, High: {sev.get('High',0)}, "
             f"Medium: {sev.get('Medium',0)}, Low: {sev.get('Low',0)}.\n"
             f"Top issues: {top_titles or 'none'}.{path_note}\n\n"
             f"Write the executive summary now. State the overall risk level, name the most critical "
             f"exposures without technical detail, and close with one concrete recommended first step. "
-            f"Cite ONLY the counts given above - any other number will contradict the report's own "
+            f"Cite ONLY the counts given above, any other number will contradict the report's own "
             f"figures. Do not use headers, bullets, or markdown. Plain paragraph only."
         )
-        # Shared factory - a direct construction crashes on a stale SSL_CERT_FILE.
+        # Shared factory, a direct construction crashes on a stale SSL_CERT_FILE.
         client = ai_findings.build_client(api_key)
         # create_message, not client.messages.create: `temperature` is deprecated on the
         # Claude 5 models and sending it returns HTTP 400.
@@ -136,6 +139,115 @@ def _generate_executive_summary(findings: list[dict], score: dict,
         return None, f"{type(e).__name__}: {e}"
 
 
+_SEV_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+
+
+def _heavy_sp_groups(findings: list[dict]) -> "list[tuple[str, str, list[dict]]]":
+    """Mirror the report/dashboard consolidation: service principals that appear in MORE THAN
+    5 distinct deterministic findings. Returns (sp_id, sp_name, member_findings), most findings
+    first. Kept in lockstep with _consolidateSPs / _consolidateReportSPs in the UI."""
+    from collections import defaultdict
+    hits: "dict[str, list[dict]]" = defaultdict(list)
+    names: "dict[str, str]" = {}
+    for f in findings:
+        if not f.get("rule_id") or f.get("best_practice") or f.get("source") == "path_consolidation":
+            continue
+        seen = set()   # a finding may list the same SP more than once; count it ONCE per SP
+        for e in (f.get("entities") or []):
+            if isinstance(e, dict) and e.get("kind") == "AZServicePrincipal" and e.get("id"):
+                sid = e["id"]
+                if sid in seen:
+                    continue
+                seen.add(sid)
+                hits[sid].append(f)
+                names[sid] = e.get("name") or sid
+    groups = [(sid, names[sid], fs) for sid, fs in hits.items() if len(fs) > 5]
+    groups.sort(key=lambda t: -len(t[2]))
+    return groups
+
+
+def _parse_sp_insight(text: str) -> "dict | None":
+    """Parse the model's JSON object (summary / description / attack_scenario). Defensive: a
+    non-JSON reply falls back to showing the prose as the description, never an error."""
+    import json
+    import re
+    if not text:
+        return None
+    m = re.search(r"\{.*\}", text, re.S)
+    if m:
+        try:
+            d = json.loads(m.group(0))
+            out = {k: str(d.get(k, "")).strip()
+                   for k in ("summary", "description", "attack_scenario") if str(d.get(k, "")).strip()}
+            if out:
+                return out
+        except Exception:  # noqa: BLE001, fall through to prose
+            pass
+    return {"description": text.strip()}
+
+
+def _generate_sp_group_insights(findings: list[dict], api_key: str, model: str,
+                                *, max_groups: int = 20) -> "tuple[dict, str | None]":
+    """For each heavily-flagged service principal (grouped in the UI), synthesise a holistic
+    summary, why-it-matters description and a concrete multi-step attack scenario that chains
+    the SP's individual findings, so the grouped card reads like a first-class finding instead
+    of a bare list. Returns ({sp_id: {summary, description, attack_scenario}}, error)."""
+    groups = _heavy_sp_groups(findings)[:max_groups]
+    if not groups:
+        return {}, None
+    try:
+        client = ai_findings.build_client(api_key)
+    except Exception as e:  # noqa: BLE001
+        return {}, f"{type(e).__name__}: {e}"
+
+    def _one(group: "tuple[str, str, list[dict]]") -> "tuple[str, dict | None]":
+        sid, name, fs = group
+        issues = sorted(fs, key=lambda f: _SEV_RANK.get(f.get("severity"), 5))
+        lines = []
+        for f in issues[:30]:
+            detail = (f.get("summary") or f.get("what") or "").replace("\n", " ")[:160]
+            lines.append(f"- [{f.get('severity')}] {f.get('rule_id')}: {f.get('title')}"
+                         + (f", {detail}" if detail else ""))
+        prompt = (
+            "You are an Azure identity security analyst. A single service principal (non-human "
+            "application identity) has been flagged by many separate deterministic rules. Below is "
+            "the COMPLETE list of findings for this one service principal. Treat them as facts; do "
+            "NOT invent permissions, roles or findings that are not listed.\n\n"
+            f"Service principal: {name}\n"
+            f"Findings ({len(fs)} total):\n" + "\n".join(lines) + "\n\n"
+            "Explain the COMBINED risk this one identity represents when these issues are viewed "
+            "together, and how an attacker would chain them. Respond with ONLY a JSON object, no "
+            "prose outside it, with exactly these keys:\n"
+            '  "summary": one or two sentences stating why this service principal is a '
+            "high-priority cleanup.\n"
+            '  "description": a short paragraph (3-5 sentences) on why the combination matters, '
+            "the aggregate blast radius, not a restatement of the list.\n"
+            '  "attack_scenario": a concrete, step-by-step narrative of how an attacker who '
+            "compromised this service principal would abuse these specific findings to reach "
+            "tenant-impacting access. Reference only the findings listed above.\n"
+            "Plain sentences inside the JSON values; no markdown, no bullet characters."
+        )
+        try:
+            msg = ai_findings.create_message(
+                client, model=model, max_tokens=900, temperature=0,
+                messages=[{"role": "user", "content": prompt}])
+            text = (msg.content[0].text if msg.content else "").strip()
+            return sid, _parse_sp_insight(text)
+        except Exception:  # noqa: BLE001, best-effort per SP; a failure just omits its insight
+            return sid, None
+
+    from concurrent.futures import ThreadPoolExecutor
+    out: dict = {}
+    try:
+        with ThreadPoolExecutor(max_workers=min(4, len(groups))) as pool:
+            for sid, insight in pool.map(_one, groups):
+                if insight:
+                    out[sid] = insight
+    except Exception as e:  # noqa: BLE001
+        return out, f"{type(e).__name__}: {e}"
+    return out, None
+
+
 # Bump when a change to prompts, tool schemas or post-processing should invalidate
 # every cached analysis (otherwise a repeat scan would replay pre-change output).
 AI_ANALYSIS_VERSION = "2026-09-16.2"  # +severity rubric + per-domain reading guide (prompt tuning)
@@ -152,7 +264,7 @@ _CACHED_GEN_FIELDS = (
 
 _COMPUTE_KINDS = {NodeKind.VM, NodeKind.VMSS, NodeKind.FUNCTION_APP,
                   NodeKind.LOGIC_APP, NodeKind.WEB_APP, NodeKind.AKS, NodeKind.AUTOMATION}
-# Escalation primitives among PRINCIPALS - the attack surface. Edges to ephemeral compute
+# Escalation primitives among PRINCIPALS, the attack surface. Edges to ephemeral compute
 # (managed-identity theft on a specific VM) are excluded from the fingerprint: which VM
 # instance currently hosts an identity is not a posture change.
 _FINGERPRINT_EDGES = {
@@ -165,7 +277,7 @@ _FINGERPRINT_EDGES = {
 def _stabilize_entity(g: Graph, eid: str) -> str:
     """Map an ephemeral compute resource to the STABLE identity it carries, so a VM instance
     being replaced by an equivalent one (same managed identity, same privilege) is not seen as
-    a change. A new host with a NEW identity still changes the fingerprint - as it should."""
+    a change. A new host with a NEW identity still changes the fingerprint, as it should."""
     n = g.node(eid)
     if n is not None and n.kind in _COMPUTE_KINDS:
         mis = sorted(e.dst for e in g.out_edges(eid, EdgeType.HAS_MANAGED_IDENTITY))
@@ -179,9 +291,9 @@ def _posture_fingerprint(g: Graph, det_findings: list[dict]) -> list:
     Built from the deterministic findings (rule id + the entities each is about, with ephemeral
     compute normalized to its managed identity) plus the Tier-0 set and the principal-plane
     escalation edges. The 110 deterministic rules comprehensively cover the attack surface, so
-    if this signature is unchanged the security posture is unchanged - and the (non-deterministic)
-    AI analysis can be replayed rather than re-rolled. A real change - a new privileged principal,
-    a new dangerous grant, a new escalation path, a newly-exposed resource - moves a deterministic
+    if this signature is unchanged the security posture is unchanged, and the (non-deterministic)
+    AI analysis can be replayed rather than re-rolled. A real change, a new privileged principal,
+    a new dangerous grant, a new escalation path, a newly-exposed resource, moves a deterministic
     finding and so changes the signature, busting the cache. Only churn that no rule flags (an
     ephemeral VM, an unprivileged new account) is tolerated, which is exactly what makes two
     consecutive scans of an unchanged posture return the same result."""
@@ -204,11 +316,11 @@ def _posture_fingerprint(g: Graph, det_findings: list[dict]) -> list:
 
 def _analysis_cache_key(fact_pack, client: LLMClient, det_findings: list[dict],
                         g: Graph) -> str:
-    """Hash the SECURITY POSTURE the analysis depends on - not the raw fact pack.
+    """Hash the SECURITY POSTURE the analysis depends on, not the raw fact pack.
 
     Keying on the whole pack meant any incidental inventory drift (an ephemeral VM spinning up,
     a non-privileged account created) produced a different key, missed the cache, and re-rolled
-    the non-deterministic model ensemble - so two consecutive scans of an UNCHANGED posture
+    the non-deterministic model ensemble, so two consecutive scans of an UNCHANGED posture
     returned very different finding sets. Instead we key on a posture fingerprint: the
     deterministic findings (which comprehensively cover the attack surface) plus the Tier-0 set
     and principal-plane escalation edges, with ephemeral compute normalized to its identity.
@@ -220,6 +332,11 @@ def _analysis_cache_key(fact_pack, client: LLMClient, det_findings: list[dict],
     payload = {
         "version": AI_ANALYSIS_VERSION,
         "models": [client.sonnet_model, client.opus_model, client.haiku_model],
+        # Namespace by tenant: the posture fingerprint is entity-GUID based, but a degenerate
+        # (clean / empty) posture fingerprints identically across tenants, so two different tenants
+        # could otherwise share a cache entry and replay each other's AI narrative. The tenant id
+        # scopes the cache so a hit can only ever be the SAME tenant's prior analysis.
+        "tenant": str(getattr(g, "tenant_id", "") or ""),
         "posture": _posture_fingerprint(g, det_findings),
     }
     blob = json.dumps(payload, sort_keys=True, default=str).encode()
@@ -249,7 +366,7 @@ def _gen_to_cache(gen) -> dict:
 
 # Prose fields whose exact wording should read identically across re-runs. Structural
 # fields (severity, confidence, entities, category, attack_primitive, paths) are
-# NEVER pinned - they must always reflect the current tenant, only the words are frozen.
+# NEVER pinned, they must always reflect the current tenant, only the words are frozen.
 _NARRATIVE_FIELDS = ("title", "summary", "what", "reasoning", "why_it_matters",
                      "attack_scenario", "remediation", "detection")
 
@@ -257,8 +374,8 @@ _NARRATIVE_FIELDS = ("title", "summary", "what", "reasoning", "why_it_matters",
 def _narrative_identity(f: dict) -> str:
     """Stable, wording-independent identity for a finding.
 
-    Keyed on the facts that make it THIS finding - its rule (or specialist category)
-    plus the exact set of entities it is about - never on its title or prose (which is
+    Keyed on the facts that make it THIS finding, its rule (or specialist category)
+    plus the exact set of entities it is about, never on its title or prose (which is
     what we are pinning). Same entities + same category ⇒ same identity ⇒ the same
     wording is reused; if the entity set changes, the identity changes and the finding
     is re-narrated afresh, so a materially different finding never inherits stale prose.
@@ -343,7 +460,7 @@ def _attach_attack_map(result: dict, findings: list[dict], g: Graph,
         except Exception:
             cart_client = None
     # Narrate only the top few paths, on Haiku (naming + one-line summary of an ALREADY-computed
-    # path is restatement, not reasoning - the deterministic fallback covers every other path).
+    # path is restatement, not reasoning, the deterministic fallback covers every other path).
     # Was Opus (priciest), then Sonnet; Haiku is quality-neutral here and ~3× cheaper than Sonnet.
     model = ai_findings.DEFAULT_NARRATION_MODEL
     try:
@@ -406,7 +523,7 @@ def apply_ai_generation(result: dict, g: Graph, client: LLMClient, *,
                       + result["fact_pack_audit"]["phantom_escalation_edges"]
                       + result["fact_pack_audit"]["counts_mismatch"]
                       + result["fact_pack_audit"]["tier0_not_in_graph"])
-                on_progress(f"[ACCURACY] fact-pack audit found {_n} integrity issue(s) - see "
+                on_progress(f"[ACCURACY] fact-pack audit found {_n} integrity issue(s), see "
                             f"result['fact_pack_audit']; the pack may misrepresent the graph.")
         except Exception:
             pass   # the audit is a safety net; it must never break a scan
@@ -422,7 +539,7 @@ def apply_ai_generation(result: dict, g: Graph, client: LLMClient, *,
             result["ai_analysis_reused"] = True
             if on_progress:
                 on_progress(
-                    "Reusing the stored AI analysis - this collection and model set were "
+                    "Reusing the stored AI analysis, this collection and model set were "
                     "already analysed, so the findings are identical to that run. "
                     "Re-scan with 'Fresh AI analysis' to re-query the models."
                 )
@@ -462,7 +579,7 @@ def apply_ai_generation(result: dict, g: Graph, client: LLMClient, *,
     ]
     merged.sort(key=lambda f: {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}.get(f["severity"], 5))
 
-    # Stamp ATT&CK + ATRM on the merged set - the AI findings (mitre_technique) get their
+    # Stamp ATT&CK + ATRM on the merged set, the AI findings (mitre_technique) get their
     # frameworks here, the deterministic ones are already tagged (idempotent).
     for _f in merged:
         enrich_frameworks(_f)
@@ -475,18 +592,23 @@ def apply_ai_generation(result: dict, g: Graph, client: LLMClient, *,
     result["ai_narrative_pinned"] = _pin["pinned"]
     result["ai_narrative_stored"] = _pin["stored"]
 
-    # Maximum-impact path plot - every attack gets its worst-case path
+    # Maximum-impact path plot, every attack gets its worst-case path
     # through the real escalation graph, and the cartographer narrates and names it.
     _attach_attack_map(result, merged, g, client, on_progress=on_progress, trace=trace)
 
-    # Recompute severity counts from the merged list - pre-AI counts only covered
+    # Recompute severity counts from the merged list, pre-AI counts only covered
     # deterministic findings, so the filter bar would show wrong numbers.
     # Attack-path findings are EXCLUDED, matching scoring.rescore_from_findings and the
     # badges. Counting them here inflated Critical from 9 to 300, and because the
     # executive summary is generated from these counts it opened with "300 critical
     # findings" directly above a badge reading 9.
     if "score" in result:
-        _scored = [f for f in merged if f.get("source") != "path_consolidation"]
+        from . import report as _report
+        _thr = store.get_settings().get("ai_lead_confidence", 50)
+        # Exclude attack-path rows AND unverified AI leads, matching the badges and the grade, so the
+        # executive summary generated from these counts cannot contradict the numbers on screen.
+        _scored = [f for f in merged
+                   if f.get("source") != "path_consolidation" and not _report.is_ai_lead(f, _thr)]
         result["score"]["severity_counts"] = {
             s: sum(1 for f in _scored if f.get("severity") == s)
             for s in ("Critical", "High", "Medium", "Low", "Info")
@@ -521,14 +643,14 @@ def apply_ai_generation(result: dict, g: Graph, client: LLMClient, *,
     result["remediation_roadmap"] = gen.remediation_roadmap
     result["coverage_warnings"]   = gen.coverage_warnings
 
-    # Generate executive summary last - it needs the fully merged finding list
+    # Generate executive summary last, it needs the fully merged finding list
     if on_progress:
         on_progress("Generating executive summary...")
     summary, summary_err = _generate_executive_summary(
         merged,
         result.get("score", {}),
         client.api_key,
-        ai_findings.DEFAULT_NARRATION_MODEL,   # narration, not reasoning - Haiku is fine here
+        ai_findings.DEFAULT_NARRATION_MODEL,   # narration, not reasoning, Haiku is fine here
     )
     if summary:
         result["ai_executive_summary"] = summary
@@ -538,5 +660,19 @@ def apply_ai_generation(result: dict, g: Graph, client: LLMClient, *,
         ]
         if on_progress:
             on_progress(f"Executive summary failed: {summary_err}")
+
+    # Per-service-principal group insights: a holistic summary + attack scenario for each SP
+    # that the UI consolidates into one card, so the grouped card carries the same depth as an
+    # individual finding instead of a bare list. Best-effort, never fails the scan.
+    if on_progress:
+        on_progress("Generating service-principal group insights...")
+    sp_insights, sp_err = _generate_sp_group_insights(
+        merged, client.api_key, ai_findings.DEFAULT_NARRATION_MODEL)
+    if sp_insights:
+        result["sp_group_insights"] = sp_insights
+    if sp_err:
+        result["ai_stage_errors"] = list(result.get("ai_stage_errors") or []) + [
+            f"Service-principal group insights could not be generated: {sp_err}"
+        ]
 
     return result

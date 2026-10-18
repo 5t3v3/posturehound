@@ -1,6 +1,6 @@
 """Enterprise analyst-console report generator (single self-contained file).
 
-Design: a security analyst's console grounded in the tool's own world - attack
+Design: a security analyst's console grounded in the tool's own world, attack
 graphs and privilege-escalation lineage. Technical artifacts (object ids, edges,
 evidence) are set in monospace; human narrative in a sans face. The signature
 element is the Attack Paths view: every finding.s maximum-impact path, the cross-
@@ -172,8 +172,8 @@ def _regroup_path_findings(result: dict) -> dict:
 
     # Second consolidation: collapse findings that share the SAME SET of terminal chokepoints
     # (each an edge → Tier-0 target). This subsumes two cases with one rule:
-    #   * single-edge dupes  - many principals with one shared route (e.g. CanAddMember on a group);
-    #   * identical cohorts   - principals with the exact same multi-route profile (e.g. 12 members
+    #   * single-edge dupes , many principals with one shared route (e.g. CanAddMember on a group);
+    #   * identical cohorts  , principals with the exact same multi-route profile (e.g. 12 members
     #                           of the same two Tier-0 groups, or 7 SPs that can add members to the
     #                           same 9 groups).
     # The MemberOf pass above already folds pure membership chains; a principal with a UNIQUE
@@ -222,7 +222,7 @@ def _regroup_path_findings(result: dict) -> dict:
             via = _phrase(edge, dname)
             title = f"{n} principals → tier-0 via {via} ({worst_sev})"
             summary = (f"{n} distinct principals each reach Tier-0 in one step through {via}. "
-                       f"One chokepoint, {n} entry points - fixing '{dname}' closes all {n} routes.")
+                       f"One chokepoint, {n} entry points, fixing '{dname}' closes all {n} routes.")
             what = f"{n} principals hold {via} the Tier-0 asset."
             why = (f"The blast radius is {n} accounts wide but the remediation is single-point: "
                    f"restrict {via}.")
@@ -231,7 +231,7 @@ def _regroup_path_findings(result: dict) -> dict:
             shown = ", ".join(_phrase(e, nm) for e, _i, nm in pairs[:4]) + (f" +{k - 4} more" if k > 4 else "")
             title = f"{n} principals share the same {k}-route escalation to tier-0 ({worst_sev})"
             summary = (f"{n} distinct principals have the identical escalation profile ({k} routes): "
-                       f"{shown}. Same cohort, same fix - remediate these {k} chokepoints once "
+                       f"{shown}. Same cohort, same fix, remediate these {k} chokepoints once "
                        f"instead of triaging {n} look-alike findings.")
             what = f"{n} principals each reach Tier-0 through the same {k} chokepoint(s)."
             why = (f"{n} accounts share one blast radius; closing the {k} shared chokepoint(s) "
@@ -265,7 +265,7 @@ def _synthesize_path_findings(result: dict) -> dict:
     and stored on every scan, but the Attack Paths tab was gated solely on
     `path_consolidation` findings and `chokepoints`, both of which only the AI pipeline
     produces. So a scan run without an API key stored 100 paths (90 Critical) and 10
-    chokepoints and then hid all of them - the single largest piece of value lost when
+    chokepoints and then hid all of them, the single largest piece of value lost when
     AI is unavailable. This converts the stored paths into the same shape the AI path
     findings use, so the existing view (and _regroup_path_findings) works unchanged.
     """
@@ -339,7 +339,7 @@ def _synthesize_path_findings(result: dict) -> dict:
             "what": (f"{n} independent escalation route(s) to tier-0 target(s): "
                      f"{', '.join(targets[:3])}."),
             "reasoning": "",
-            "why_it_matters": ("Any single path is sufficient for compromise - an attacker "
+            "why_it_matters": ("Any single path is sufficient for compromise, an attacker "
                                f"controlling this principal has {n} escalation option(s)."),
             "attack_scenario": shortest["path"],
             "escalation_chain": [],
@@ -391,7 +391,7 @@ def _synthesize_path_findings(result: dict) -> dict:
                 "critical_count": sum(1 for p in traversing if p.get("critical")),
                 "high_count": 0,
                 "action": (
-                    f"Reduce privilege on or restrict membership of {name} - hardening it "
+                    f"Reduce privilege on or restrict membership of {name}, hardening it "
                     f"severs more paths than any single downstream fix."
                     + (f" It sits on {through} of the {total} route(s) shown here."
                        if through else "")
@@ -405,13 +405,258 @@ def _synthesize_path_findings(result: dict) -> dict:
     return result
 
 
+_SP_SEV_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+
+
+def _sp_group_evidence(f: dict, sid: str) -> str:
+    """The concrete permission / role / scope THIS finding flags for the service principal, as a
+    short string, so the grouped list shows what each finding actually found (e.g. the specific
+    Graph permission), not just the rule title."""
+    for e in (f.get("entities") or []):
+        if not (isinstance(e, dict) and e.get("id") == sid):
+            continue
+        ev = e.get("evidence")
+        if isinstance(ev, dict) and ev:
+            # Low-signal keys that just add noise to the one-line summary.
+            skip = {"confirmed", "foreign_tenant", "external", "subscription", "subscriptions"}
+            parts = []
+            for k, v in ev.items():
+                if k in skip or v is None or v is False or v == "" or (isinstance(v, (list, dict)) and not v):
+                    continue
+                if isinstance(v, (list, tuple)):
+                    v = ", ".join(str(x) for x in list(v)[:6]) + ("…" if len(v) > 6 else "")
+                elif isinstance(v, dict):
+                    v = ", ".join(f"{a} {b}" for a, b in list(v.items())[:4])
+                v = str(v)
+                if len(v) > 140:                       # don't dump a wall of per-scope assignments
+                    v = v[:140].rsplit(" ", 1)[0] + " …"
+                parts.append(f"{str(k).replace('_', ' ')}: {v}")
+                if len(parts) >= 4:
+                    break
+            if parts:
+                out = " · ".join(parts)
+                return out if len(out) <= 260 else out[:260].rsplit(" ", 1)[0] + " …"
+        role = (e.get("role_in_finding") or "").strip()
+        if role and not role.lower().startswith("affected"):
+            return role
+    return ""
+
+
+def _build_sp_group(sid: str, name: str, fs: list, insight: "dict | None") -> dict:
+    """One consolidated, first-class finding for a service principal flagged by many rules.
+    Carries the member list (each with the concrete permission/evidence that finding flagged) plus
+    a synthesized summary / why / attack scenario (or the AI group insight when present), so the
+    grouped card has the same depth as an individual finding."""
+    from collections import Counter
+    issues = sorted(fs, key=lambda f: _SP_SEV_RANK.get(f.get("severity"), 5))
+    grouped = [{"rule_id": f.get("rule_id"), "title": f.get("title"), "severity": f.get("severity"),
+                "evidence": _sp_group_evidence(f, sid)}
+               for f in issues]
+    n = len(grouped)
+    top = grouped[0]["severity"] if grouped else "Info"
+    sc = Counter(g["severity"] for g in grouped)
+    sc_str = ", ".join(f"{sc[s]} {s}" for s in ("Critical", "High", "Medium", "Low", "Info") if sc[s])
+    worst_titles = [g["title"] for g in grouped if g["severity"] in ("Critical", "High")] \
+        or [g["title"] for g in grouped[:4]]
+    worst = "; ".join(t for t in worst_titles[:5] if t)
+    ent = next((e for e in (fs[0].get("entities") or [])
+                if isinstance(e, dict) and e.get("id") == sid),
+               {"id": sid, "name": name, "kind": "AZServicePrincipal"})
+    ins = insight or {}
+    summary = ins.get("summary") or (
+        f"Service principal ‘{name}’ is flagged by {n} deterministic rules ({sc_str}). "
+        f"Reviewed together, this one identity is a single high-priority cleanup rather than "
+        f"{n} findings scattered across the report.")
+    why = ins.get("description") or (
+        f"Each of the {n} findings below is a distinct weakness on the SAME identity. An attacker "
+        f"who compromises this service principal inherits all of them at once, so its combined "
+        f"blast radius is far larger than any single finding suggests. The most severe are: {worst}.")
+    scenario = ins.get("attack_scenario") or (
+        f"An attacker obtains this service principal’s credentials, a leaked client "
+        f"secret, a non-privileged owner who can add one, or an over-broad federated credential "
+        f"- and immediately chains the weaknesses it already holds: {worst}. Because all of "
+        f"these sit on one identity, a single compromise escalates across every one of these paths "
+        f"at the same time, with no further lateral movement required.")
+    remediation = (
+        f"Treat ‘{name}’ as one high-priority cleanup. Work through every finding listed "
+        f"below: remove the Graph permissions, standing credentials, ownership and role assignments "
+        f"it does not demonstrably need, then re-scan to confirm. If it is broadly over-scoped, "
+        f"replace it with a least-privilege identity.")
+    detection = (
+        f"Enumerate every finding referencing this service principal’s object id ({sid}); "
+        f"{n} deterministic rules currently match it. Any service principal in more than five "
+        f"distinct findings warrants this consolidated review.")
+    return {
+        "source": "sp_group", "rule_id": None,
+        "title": f"Service principal ‘{name}’, {n} findings",
+        "severity": top, "category": "Applications & Service Principals", "best_practice": False,
+        "entities": [ent], "affected_count": 1, "_grouped": grouped, "sp_id": sid,
+        "summary": summary, "what": why, "why_it_matters": why, "attack_scenario": scenario,
+        "remediation": remediation, "detection": detection,
+        "evidence": [f"{g['severity']} {g['rule_id']}: {g['title']}" for g in grouped],
+        "escalation_chain": [], "detail": {}, "references": [], "frameworks": {},
+    }
+
+
+def _consolidate_sp_groups(result: dict) -> dict:
+    """Build result["sp_groups"]: one group finding per service principal that appears in more
+    than five distinct deterministic findings. Shares the exact grouping with the AI insight
+    stage (ai._heavy_sp_groups) so the server and the renderers always agree. Member findings
+    are NOT modified here, the renderers strip the SP from them for display only, so scoring and
+    CIS coverage continue to see every underlying rule."""
+    findings = result.get("findings")
+    if not isinstance(findings, list):
+        return result
+    try:
+        from .ai import _heavy_sp_groups
+    except Exception:  # noqa: BLE001, AI module optional; grouping is best-effort
+        return result
+    groups = _heavy_sp_groups(findings)
+    insights = result.get("sp_group_insights") or {}
+    # Preserve any serve-time status already attached to a prior build of these groups (matched by
+    # sp_id); the groups are rebuilt on every finalize, so without this a re-finalize in the renderer
+    # would reset a group's remediation status to New.
+    prev_status = {g.get("sp_id"): g.get("status")
+                   for g in (result.get("sp_groups") or []) if isinstance(g, dict)}
+    # Each group is a first-class finding, so stamp its stable key here (it is deterministic from the
+    # group's title + entity) rather than relying on a later stage. This keeps the key present through
+    # the renderers' re-finalize, so the group card matches its remediation status and ADO work item.
+    from .store import finding_key as _finding_key   # lazy: store imports report (finalize)
+    built = []
+    for sid, name, fs in groups:
+        g = _build_sp_group(sid, name, fs, insights.get(sid))
+        g["_finding_key"] = _finding_key(g)
+        if prev_status.get(sid) is not None:
+            g["status"] = prev_status[sid]
+        built.append(g)
+    result["sp_groups"] = built
+    return result
+
+
+def is_ai_lead(f: dict, threshold: int = 50) -> bool:
+    """Server-side mirror of the renderers' `_isAILead` (report.py / webapp.py JS): a low-confidence
+    or 'lead'-tier AI finding that the interactive report counts under its own "Leads" chip, NOT in
+    the severity badges. Used so server-side severity counts (the history index, dashboard tiles)
+    match the on-screen badges. A deterministic, corroborated, best-practice or group finding is
+    never a lead. `threshold` is the Settings `ai_lead_confidence`."""
+    if not isinstance(f, dict) or f.get("best_practice") or f.get("source") == "sp_group":
+        return False
+    if f.get("source") not in ("ai_generated", "ai_chain"):
+        return False
+    qt = f.get("quality_tier")
+    if qt in ("verified_fact", "corroborated"):
+        return False
+    if qt == "lead":
+        return True
+    c = f.get("effective_confidence")
+    if not isinstance(c, (int, float)):
+        c = f.get("confidence")
+    return isinstance(c, (int, float)) and c < threshold
+
+
+def heavy_sp_ids(result: dict) -> set:
+    """The ids of service principals that have their own consolidated group card."""
+    return {g.get("sp_id") for g in (result.get("sp_groups") or [])
+            if isinstance(g, dict) and g.get("sp_id")}
+
+
+def strip_grouped_sps(finding: dict, heavy_ids: set) -> dict:
+    """Return a display-consistent copy of an individual finding with every heavy SP (one that has
+    its own group card) removed from its entities, evidence, count and summary, so an ADO work item
+    built from it matches what the finding card shows. The renderers do the same strip in the browser
+    (report._consolidateReportSPs / webapp._consolidateSPs); this is the server-side equivalent for
+    work-item creation. A group finding (source == 'sp_group') is returned unchanged."""
+    import re as _re
+    if not isinstance(finding, dict) or finding.get("source") == "sp_group":
+        return finding
+    ents = finding.get("entities")
+    if not isinstance(ents, list) or not heavy_ids:
+        return finding
+    ne = [e for e in ents if not (isinstance(e, dict) and e.get("id") in heavy_ids)]
+    if len(ne) == len(ents):
+        return finding                              # nothing grouped in this finding
+    if ents and not ne:
+        return None                                # every entity was grouped -> only in the group card
+    g = dict(finding)
+    g["entities"] = ne
+    g["affected_count"] = len(ne)
+    removed = {str(e.get("name") or e.get("id") or "").lower()
+               for e in ents if isinstance(e, dict) and e.get("id") in heavy_ids}
+
+    def _lead_name(s: str) -> str:
+        m = _re.match(r"\s*(.*?)\s*[(:]", str(s))
+        return (m.group(1) if m else str(s)).strip().lower()
+
+    ev = finding.get("evidence")
+    if isinstance(ev, list):
+        g["evidence"] = [e for e in ev if _lead_name(e) not in removed]
+    # Rewrite only the leading "N affected ..." entity sentence of the summary; keep any trailing
+    # context sentence (e.g. the subscription-span clause) that the group card does not duplicate.
+    names = [e.get("name") or e.get("id") for e in ne if isinstance(e, dict)]
+    names = [n for n in names if n]
+    shown = ", ".join(names[:4]) + (f" (+{len(names) - 4} more)" if len(names) > 4 else "")
+    kind = str((ne[0].get("kind") if ne and isinstance(ne[0], dict) else "") or "").replace("AZ", "") or "object"
+    prefix = f"{len(ne)} affected {kind}{'s' if len(ne) != 1 else ''}: {shown}."
+    summ = finding.get("summary")
+    if isinstance(summ, str) and summ:
+        tail = _re.sub(r"^[^.]*\.\s*", "", summ)
+        g["summary"] = (prefix + " " + tail) if tail else prefix
+    # The attack scenario is instantiated on the worst entity ("Concretely: an attacker who
+    # compromises <SP> ... realises this."). If that SP was grouped out, re-point the lead at a
+    # surviving entity so the scenario does not name a principal the finding no longer lists.
+    scen = finding.get("attack_scenario")
+    if isinstance(scen, str) and scen and ne:
+        base = _re.sub(r"^Concretely: an attacker who compromises .*? realises this\.\s*", "", scen)
+        top = ne[0]
+        nm = top.get("name") or top.get("id") or "the affected principal"
+        lead = f"Concretely: an attacker who compromises {nm} ({kind}) realises this."
+        g["attack_scenario"] = (lead + " " + base) if base else lead
+    return g
+
+
+def display_findings(result: dict, *, include_groups: bool = True) -> list:
+    """The canonical display view of a scan's findings, the single server-side source every non-UI
+    consumer (CSV export, PDF/standalone report, the remediation roadmap) must use so it agrees with
+    what the interactive report and dashboard show. Mirrors the browser renderers
+    (report._consolidateReportSPs / webapp._consolidateSPs): the consolidated service-principal group
+    findings come first, then every individual finding with its grouped SPs stripped out
+    (entities / evidence / count / summary / scenario), dropping a finding whose only entities were
+    all grouped (it now lives solely in its group card). `result` must already be finalized
+    (store.get_scan / finalize_findings guarantees this)."""
+    if not isinstance(result, dict):
+        return []
+    heavy = heavy_sp_ids(result)
+    out: list = list(result.get("sp_groups") or []) if include_groups else []
+    for f in (result.get("findings") or []):
+        if not isinstance(f, dict):
+            continue
+        g = strip_grouped_sps(f, heavy)
+        if g is None:                 # every entity was grouped -> shown only in its group card
+            continue
+        out.append(g)
+    return out
+
+
+def _apply_remediation_points(result: dict) -> None:
+    """Attach `remediation_points` (validate-first + the rule steps + a scoping step) to every
+    finding and SP group, so every How-to-fix leads with 'confirm it is not needed' and offers to
+    scope the access down rather than only revoke it."""
+    from . import remediation
+    for f in (result.get("findings") or []):
+        if isinstance(f, dict):
+            f["remediation_points"] = remediation.points(f)
+    for g in (result.get("sp_groups") or []):
+        if isinstance(g, dict):
+            g["remediation_points"] = remediation.points(g)
+
+
 def finalize_findings(result: dict) -> dict:
     """The single authoritative consolidation of a scan's findings.
 
     Synthesizes Attack-Path findings from the deterministic `attack_paths` (so no-API-key
     scans still get them), then collapses the per-principal path rows into one finding per
-    shared chokepoint. Every consumer - the interactive findings API, the HTML/PDF report,
-    the history count, the scan diff - must see findings THROUGH here, so the on-screen list
+    shared chokepoint. Every consumer, the interactive findings API, the HTML/PDF report,
+    the history count, the scan diff, must see findings THROUGH here, so the on-screen list
     can never again disagree with the report. In practice this is enforced at the two store
     chokepoints (`save_scan` on write, `get_scan` on read); callers that build a result
     without going through the store (the CLI) call this directly.
@@ -419,7 +664,17 @@ def finalize_findings(result: dict) -> dict:
     Idempotent: a `_paths_consolidated` marker makes a second call a no-op, so applying it at
     write time AND read time (and defensively in the renderers) is safe and cheap.
     """
-    if not isinstance(result, dict) or result.get("_paths_consolidated"):
+    if not isinstance(result, dict):
+        return result
+    # SP-group consolidation is cheap and deterministic, so recompute it on every finalize (even
+    # an already path-consolidated result). This gives scans saved before groups existed their
+    # group findings on the next read, and applies any change to the group shape (e.g. the
+    # per-member evidence) to existing scans with no re-scan.
+    _consolidate_sp_groups(result)
+    # Proactive, review-first How-to-fix on every finding + group. Recomputed on every finalize,
+    # so it reaches existing scans on read without a re-scan.
+    _apply_remediation_points(result)
+    if result.get("_paths_consolidated"):
         return result
     result = _regroup_path_findings(_synthesize_path_findings(result))
     # Give every non-AI finding a concrete, entity-grounded summary + evidence list so a
@@ -453,7 +708,7 @@ def render_html(result: dict, nonce: str | None = None) -> str:
 
 _SHELL = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PostureHound - Identity Posture</title>
+<title>PostureHound, Identity Posture</title>
 <style>/*__CSS__*/</style></head>
 <body>
 <div class="app">
@@ -583,6 +838,13 @@ h2.section{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:up
 .finding.open .fbody{display:block}
 .fbody h4{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3);margin:18px 0 7px;font-weight:650}
 .fbody h4:first-child{margin-top:0}
+.gflist{display:flex;flex-direction:column;gap:8px}
+.gfitem{border-left:2.5px solid var(--border);background:var(--raised);border-radius:0 8px 8px 0;padding:9px 12px}
+.gfhead{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;line-height:1.4}
+.gfsev{font-family:var(--mono);font-weight:700;font-size:10.5px;letter-spacing:.02em;min-width:52px}
+.gfrid{font-family:var(--mono);font-size:11px;color:var(--tx3)}
+.gftitle{font-size:13px;color:var(--tx)}
+.gfev{margin-top:4px;font-size:11.5px;color:var(--tx2);font-family:var(--mono);line-height:1.55;word-break:break-word}
 .fbody p{margin:0;color:var(--tx);max-width:78ch}
 .kvs{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 2px}
 .fw{font-size:11px;color:var(--tx2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-family:var(--mono)}
@@ -626,6 +888,8 @@ h2.section{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:up
 .srctag{font-size:10.5px;padding:2px 8px;border-radius:999px;font-weight:600;white-space:nowrap}
 .srctag.ai{background:rgba(217,138,75,.16);color:var(--accent)}
 .srctag.path{background:rgba(242,92,112,.14);color:var(--crit)}
+.adobadge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(0,120,212,.16);color:#4da3ff;border:1px solid rgba(0,120,212,.5);white-space:nowrap;text-decoration:none}
+.adobadge:hover{background:rgba(0,120,212,.28)}
 .pathf .fhead{border-left:3px solid var(--crit)}
 .pathconsolcard .pathlist{overflow-x:auto}
 .pathrow td{padding:5px 8px;border-bottom:1px solid var(--border);font-size:12px}
@@ -658,9 +922,13 @@ h2.section{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:up
 .vbtn.un.on{background:rgba(232,194,87,.18);color:var(--med);border-color:var(--med)}
 .adobox,.adowi{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 4px}
 .adobox input{background:var(--bg);border:1px solid var(--border-2);border-radius:8px;padding:6px 10px;color:var(--tx);font-size:12.5px;font-family:inherit;min-width:190px}
+.adobox select{background:var(--bg);border:1px solid var(--border-2);border-radius:8px;padding:6px 8px;color:var(--tx);font-size:12.5px;font-family:inherit}
+.adoslalbl{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx3)}
 .adocreate{font-size:12px;font-weight:600;padding:6px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#1a0f06;cursor:pointer}
 .adocreate:hover{filter:brightness(1.07)}.adocreate:disabled{opacity:.55;cursor:default}
 .adolink{font-size:12.5px;font-weight:600;color:var(--accent);text-decoration:none}.adolink:hover{text-decoration:underline}
+.adoredo{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:6px;border:1px solid var(--border-2);background:transparent;color:var(--tx2);cursor:pointer}
+.adoredo:hover{border-color:var(--crit);color:var(--crit)}.adoredo:disabled{opacity:.55;cursor:default}
 .vhint{font-size:11px;color:var(--tx3)}
 .qgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .qgrid .qspan{grid-column:1 / -1}
@@ -787,6 +1055,10 @@ h2.section{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:up
 _JS = r"""
 const SEV = {Critical:'var(--crit)',High:'var(--high)',Medium:'var(--med)',Low:'var(--low)',Info:'var(--info)'};
 const ORD = ['Critical','High','Medium','Low','Info'];
+// ADO remediation SLA (weeks from today) by severity, mirrors ado.SLA_WEEKS. The user picks the
+// severity; the target date is derived from it. Backend recomputes authoritatively on create.
+const ADO_SLA_WEEKS={Critical:2,High:4,Medium:8,Low:12,Info:12};
+function adoSla(sev){const w=ADO_SLA_WEEKS[sev]||12;const d=new Date();d.setDate(d.getDate()+w*7);return {weeks:w,date:d.toISOString().slice(0,10)};}
 const $ = (s,r=document)=>r.querySelector(s);
 const qa = (s,r=document)=>Array.prototype.slice.call(r.querySelectorAll(s));
 const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -812,11 +1084,27 @@ function fmtEv(o){if(!o||typeof o!=='object')return '';return Object.keys(o).map
   return `<span class="tk">${esc(k)}</span> ${esc(fmtEvVal(o[k]))}`;}).join('&nbsp;&nbsp;');}
 
 // Recompute severity counts from findings, excluding path_consolidation
-// (those are shown separately in the Attack Paths tab - not in the main badge).
+// (those are shown separately in the Attack Paths tab, not in the main badge).
+// Accuracy gate: a low-confidence or 'lead'-tier AI finding is an UNCORROBORATED hypothesis, not a
+// verified fact. Keep it out of the main findings list (and the posture counts) so the main view is
+// the deterministic ground truth plus corroborated AI; surface the rest under a "Leads" chip for
+// manual review. Deterministic findings and corroborated AI are never gated.
+const AI_LEAD_CONF = (typeof DATA._ai_lead_confidence==='number')?DATA._ai_lead_confidence:50;
+function _isAILead(f){
+  if(!f || f.best_practice) return false;
+  if(f.source!=='ai_generated' && f.source!=='ai_chain') return false;
+  if(f.quality_tier==='verified_fact' || f.quality_tier==='corroborated') return false;
+  if(f.quality_tier==='lead') return true;
+  const c=(typeof f.effective_confidence==='number')?f.effective_confidence
+          :(typeof f.confidence==='number'?f.confidence:null);
+  return c!=null && c<AI_LEAD_CONF;
+}
+const leadF = DATA.findings.filter(f=>f.source!=='path_consolidation' && _isAILead(f));
 const counts = (()=>{
   const c={Critical:0,High:0,Medium:0,Low:0,Info:0};
   for(const f of DATA.findings){
     if(f.source==='path_consolidation') continue;
+    if(_isAILead(f)) continue;                 // leads are counted under their own chip, not here
     if(c[f.severity]!==undefined) c[f.severity]++;
   }
   return c;
@@ -879,7 +1167,7 @@ const NAV = [
  // One unified escalation view (max-impact paths + cross-subscription bridges + consolidated
  // routes + chokepoints). Shows whenever any of those exist.
  ...((HAS_ATTACKMAP||HAS_PATHS)?[{id:'paths', label:'Attack Paths', ico:'\u2316', ct:ATTACKMAP.count||PATH_FINDINGS.length||PH_CHOKES.length}]:[]),
- // Interactive graph explorer for this scan \u2014 reuses the live app's graph view (needs the
+ // Interactive graph explorer for this scan, reuses the live app's graph view (needs the
  // scan id + running server), so it only appears on a server-rendered report.
  ...(HAS_SCAN_ID?[{id:'graph', label:'Attack Graph', ico:'\u25c8'}]:[]),
  ...(HAS_SCAN_ID?[{id:'roadmap', label:'Action Plan', ico:'\u2611', ct:OPEN_COUNT}]:[]),
@@ -888,7 +1176,7 @@ const NAV = [
  ...((DATA.ai_usage&&DATA.ai_usage.total)?[{id:'usage', label:'AI Usage', ico:'\u25B0',
    ct:'$'+((DATA.ai_usage.estimated_cost_usd||0).toFixed(2))}]:[]),
 ];
-let state = {section:(location.hash||'').replace('#','') || 'overview', sev:'all', q:'', bp:false, paths:false};
+let state = {section:(location.hash||'').replace('#','') || 'overview', sev:'all', q:'', bp:false, paths:false, leads:false};
 if(state.section==='attackmap') state.section='paths';   // Attack Map merged into Attack Paths
 if(!NAV.find(n=>n.id===state.section)) state.section='overview';
 function renderNav(){
@@ -906,17 +1194,17 @@ function topbar(){
  $('#topbar').innerHTML =
   `<a class="homelink" href="/" title="Back to PostureHound">\u2190 PostureHound</a>`+
   `<h1>Azure Identity Posture</h1>`+
-  `<span class="tenant">tenant ${esc(DATA.tenant_id||'\u2014')} \u00B7 ${esc(genDate)}</span>`+
+  `<span class="tenant">tenant ${esc(DATA.tenant_id||'-')} \u00B7 ${esc(genDate)}</span>`+
   `<span class="spacer"></span>`+
   `<span class="gradechip">grade <b style="color:${col}">${esc(g)}</b><span class="mono">${sc}/100</span></span>`+
   `<span class="gradechip" style="color:var(--crit)">${counts.Critical}\u00D7 critical</span>`+
   `<span class="gradechip" style="color:var(--high)">${counts.High}\u00D7 high</span>`+
-  `<button class="pdfbtn" id="pdfbtn" title="Download the shareable assessment report as a PDF (no tool branding or links \u2014 safe to send to another team)">\u2193 Export PDF</button>`;
+  `<button class="pdfbtn" id="pdfbtn" title="Download the shareable assessment report as a PDF (no tool branding or links, safe to send to another team)">\u2193 Export PDF</button>`;
  var pb=$('#pdfbtn'); if(pb) pb.onclick=downloadPdf;
 }
 function downloadPdf(){
  // Open the shareable external report (server-rendered PDF): no tool branding,
- // no graph links, no URLs - the version handed to another team. The PDF route
+ // no graph links, no URLs, the version handed to another team. The PDF route
  // is this page's path plus ".pdf": /api/scans/<id>/report -> .../report.pdf
  window.open(location.pathname+'.pdf','_blank','noopener');
 }
@@ -960,7 +1248,7 @@ function scanHealthBanner(){
  const crit=h.status==='critical';
  const items=(h.warnings||[]).map(w=>`<li><span class="wl">${esc((w.level||'').toUpperCase())}</span>${esc(w.message)}</li>`).join('');
  return `<div class="banner warn" style="${crit?'border-color:var(--crit);background:rgba(242,92,112,.07)':''}">
-   <h3><span class="bi">${crit?'⛔':'⚠'}</span> Scan health: ${crit?'INCOMPLETE - this scan is missing results':'warnings'}</h3>
+   <h3><span class="bi">${crit?'⛔':'⚠'}</span> Scan health: ${crit?'INCOMPLETE, this scan is missing results':'warnings'}</h3>
    <ul>${items}
    <li class="muted">This banner appears whenever a stage failed silently. Absence of findings in an affected area does <b>not</b> mean the tenant is clean there.</li></ul></div>`;
 }
@@ -981,11 +1269,11 @@ function analysisGapBanner(){
  const failed=DATA.ai_failed_specialists||[];
  const errs=(DATA.ai_stage_errors||[]).filter(e=>!failed.some(f=>String(e).includes(f.key)));
  if(!failed.length&&!errs.length) return '';
- const items=failed.map(f=>`<li><span class="wl">NO COVERAGE</span><b>${esc(f.label||f.key)}</b> - this domain was not analysed. ${esc(f.reason||'')}</li>`)
+ const items=failed.map(f=>`<li><span class="wl">NO COVERAGE</span><b>${esc(f.label||f.key)}</b>, this domain was not analysed. ${esc(f.reason||'')}</li>`)
    .concat(errs.map(e=>`<li><span class="wl">ERROR</span>${esc(String(e))}</li>`)).join('');
- return `<div class="banner warn"><h3><span class="bi">⚠</span> Incomplete analysis - ${failed.length?`${failed.length} attack domain(s) were not assessed`:'stage errors occurred'}</h3>
+ return `<div class="banner warn"><h3><span class="bi">⚠</span> Incomplete analysis, ${failed.length?`${failed.length} attack domain(s) were not assessed`:'stage errors occurred'}</h3>
    <ul>${items}
-   <li class="muted">Findings for the affected domain(s) are absent from this report. Absence here does <b>not</b> mean the tenant is clean in those areas - re-run the scan to obtain full coverage.</li></ul></div>`;
+   <li class="muted">Findings for the affected domain(s) are absent from this report. Absence here does <b>not</b> mean the tenant is clean in those areas, re-run the scan to obtain full coverage.</li></ul></div>`;
 }
 function collectionBanner(){
  const c=DATA.collection||{}; const ws=c.warnings||[];
@@ -993,7 +1281,7 @@ function collectionBanner(){
  const hasWarn=ws.some(w=>w.level==='warning');
  const items=ws.map(w=>`<li><span class="wl">${esc((w.level||'').toUpperCase())}</span>${esc(w.message)}</li>`).join('');
  return `<div class="banner${hasWarn?' warn':''}">
-   <h3><span class="bi">${hasWarn?'\u26A0':'\u2139'}</span> Collection health \u2014 ${hasWarn?'results may be incomplete':'notes'}</h3>
+   <h3><span class="bi">${hasWarn?'\u26A0':'\u2139'}</span> Collection health, ${hasWarn?'results may be incomplete':'notes'}</h3>
    <ul>${items}</ul></div>`;
 }
 function renderOverview(){
@@ -1018,25 +1306,28 @@ function renderOverview(){
      ${mi?`<div style="font-size:17px;font-weight:600;margin-top:4px">${esc(mi.principal)}</div>
      <div class="path">${esc(mi.kind)} \u00B7 reaches ${mi.reachable_privileged_count} privileged target(s)${mi.already_tier0?' \u00B7 already Tier-0':''}</div>
      <div class="small muted" style="margin-top:8px">Remediating the privileges of this principal removes the most exposure at once.</div>`:'<div class="muted">No escalation entry point reached privilege.</div>'}
-     ${(CROSSSUB.bridge_count||0)>0?`<div class="xsub-hi" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><span class="xsubbadge">\u21C4 ${CROSSSUB.bridge_count} cross-subscription bridge(s)</span> <span class="small muted">span ${CROSSSUB.subscription_count||0} subscription(s)${(function(){var t=(CROSSSUB.bridges||[]).filter(function(b){return b.reaches_tier0;}).length;return t?' \u00B7 '+t+' reach Tier-0':'';})()} \u2014 see Attack Paths</span></div>`:''}</div>
-   <div class="card"><div class="muted small" style="margin-bottom:6px">Most-connected principals \u2014 priority remediation targets</div>${choke}</div>
+     ${(CROSSSUB.bridge_count||0)>0?`<div class="xsub-hi" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><span class="xsubbadge">\u21C4 ${CROSSSUB.bridge_count} cross-subscription bridge(s)</span> <span class="small muted">span ${CROSSSUB.subscription_count||0} subscription(s)${(function(){var t=(CROSSSUB.bridges||[]).filter(function(b){return b.reaches_tier0;}).length;return t?' \u00B7 '+t+' reach Tier-0':'';})()}, see Attack Paths</span></div>`:''}</div>
+   <div class="card"><div class="muted small" style="margin-bottom:6px">Most-connected principals, priority remediation targets</div>${choke}</div>
   </div>
   <h2 class="section">Findings by category</h2>
   <div class="card">${catBreakdown()}</div>
   <h2 class="section">Assessment coverage</h2>
   <div class="card cov">
    <div><div class="muted small">Assessed from this collection</div><ul>${DATA.coverage.assessed_kinds.slice(0,12).map(k=>`<li class="mono">${esc(k)}</li>`).join('')}</ul></div>
-   <div class="na"><div class="muted small">Not assessable from AzureHound \u2014 verify separately</div><ul>${DATA.coverage.not_assessable_domains.map(d=>`<li>${esc(d)}</li>`).join('')}</ul></div>
+   <div class="na"><div class="muted small">Not assessable from AzureHound, verify separately</div><ul>${DATA.coverage.not_assessable_domains.map(d=>`<li>${esc(d)}</li>`).join('')}</ul></div>
   </div>`;
- qa('[data-sev]',v).forEach(e=>e.onclick=()=>{state.sev=e.dataset.sev;state.bp=false;go('findings');});
+ qa('[data-sev]',v).forEach(e=>e.onclick=()=>{state.sev=e.dataset.sev;state.bp=false;state.leads=false;go('findings');});
 }
 
 function matchF(f){
  if(f.source==='path_consolidation' && !state.paths) return false;
+ // Leads view shows ONLY the gated AI leads; every other view hides them from the main list.
+ if(state.leads) return _isAILead(f);
+ if(_isAILead(f)) return false;
  if(state.bp && !f.best_practice) return false;
  if(!state.bp && !state.paths && state.sev!=='all' && f.severity!==state.sev) return false;
  if(state.q){
-   // Search across everything the card actually shows, including entity names - a user
+   // Search across everything the card actually shows, including entity names, a user
    // who can see "AZ-RBAC-002" or a principal's name on screen expects to find it.
    const ents=(f.entities||[]).slice(0,50).map(e=>e.name||'').join(' ');
    const h=[f.rule_id,f.title,f.category,f.what,f.summary,f.severity,ents]
@@ -1150,7 +1441,7 @@ function maxImpactBlock(f){
      + hops.map((h,i)=>hopHtml(h,i===hops.length-1)).join('');
  } else {
    chainHtml = `<span class="mi-node mi-tgt">${esc((p.target&&p.target.name)||'?')}</span>`
-     + `<span class="small muted"> (exposure point - no onward escalation collected)</span>`;
+     + `<span class="small muted"> (exposure point, no onward escalation collected)</span>`;
  }
  const summary = f.max_impact_summary?`<div class="mi-summary">${esc(f.max_impact_summary)}</div>`:'';
  // A residual coherence note: the AI QA gate flagged a path/description discrepancy it
@@ -1163,14 +1454,88 @@ function maxImpactBlock(f){
    ${summary}${cohNote}
  </div>`;
 }
+// Group a heavily-flagged service principal (in MORE THAN 5 distinct deterministic findings)
+// into ONE consolidated card, and strip it from the individual findings so it no longer sits
+// under other SPs' findings. SPs in <=5 findings are left exactly as they are. Mirrors the
+// live dashboard's consolidation so the report and the UI present identical grouping.
+// Consolidate the main findings list with the server-built SP group findings (DATA.sp_groups,
+// each already a first-class finding with its own _finding_key, status, summary, why and attack
+// scenario). Strips the heavily-flagged SP from the individual findings so it is reviewed once,
+// in its group card, not scattered. Grouping is computed ONCE on the server; this only renders it.
+// Remove a heavy SP (one that has its own group card) from an individual finding completely, not
+// just from its entity list: also drop it from the finding's evidence and recount/rewrite the
+// summary, so the SP is not duplicated between its group card and this finding's own text. Returns
+// the adjusted finding, f unchanged when nothing was heavy, or null when the SP was the only entity.
+function _stripHeavySP(f, heavySet){
+  const orig=f.entities||[];
+  const ne=orig.filter(e=>!(e&&heavySet.has(e.id)));
+  if(ne.length===orig.length) return f;            // nothing heavy here
+  if(orig.length&&!ne.length) return null;         // all were heavy -> lives only in the group card
+  const removed=new Set(orig.filter(e=>e&&heavySet.has(e.id))
+                            .map(e=>String(e.name||e.id||'').toLowerCase()));
+  const g=Object.assign({},f,{entities:ne,affected_count:ne.length});
+  if(Array.isArray(f.evidence)){
+    g.evidence=f.evidence.filter(ev=>{
+      const m=String(ev).match(/^\s*(.*?)\s*[(:]/);
+      const nm=(m?m[1]:String(ev)).trim().toLowerCase();
+      return !removed.has(nm);                     // drop evidence lines naming a grouped SP
+    });
+  }
+  // Rewrite only the leading "N affected ..." entity sentence; keep any trailing context sentence
+  // (e.g. the subscription-span clause), which is not duplicated by the group card.
+  const names=ne.map(e=>e.name||e.id).filter(Boolean);
+  const shown=names.slice(0,4).join(', ')+(names.length>4?(' (+'+(names.length-4)+' more)'):'');
+  const kind=String((ne[0]&&ne[0].kind)||'').replace('AZ','')||'object';
+  const prefix=ne.length+' affected '+kind+(ne.length!==1?'s':'')+': '+shown+'.';
+  if(typeof f.summary==='string' && f.summary){
+    const tail=f.summary.replace(/^[^.]*\.\s*/,'');
+    g.summary = tail ? (prefix+' '+tail) : prefix;
+  }
+  // Re-point the scenario's "Concretely: ... compromises <SP> ... realises this." lead at a surviving
+  // entity, so it does not name a principal now shown only in its own group card.
+  if(typeof f.attack_scenario==='string' && f.attack_scenario && ne.length){
+    const base=f.attack_scenario.replace(/^Concretely: an attacker who compromises .*? realises this\.\s*/,'');
+    const top=ne[0], nm=(top&&(top.name||top.id))||'the affected principal';
+    const lead='Concretely: an attacker who compromises '+nm+' ('+kind+') realises this.';
+    g.attack_scenario = base ? (lead+' '+base) : lead;
+  }
+  return g;
+}
+function _consolidateReportSPs(list){
+  const groups=(DATA.sp_groups||[]);
+  if(!groups.length) return list;
+  const heavySet=new Set(groups.map(g=>g.sp_id).filter(Boolean));
+  const kept=[];
+  list.forEach(f=>{
+    if(f.rule_id&&!f.best_practice&&f.source!=='path_consolidation'&&Array.isArray(f.entities)){
+      const g=_stripHeavySP(f,heavySet);
+      if(g===null) return;                         // SP was its only entity -> now in the group card
+      f=g;
+    }
+    kept.push(f);
+  });
+  return groups.concat(kept);
+}
+function groupedIssuesBlock(issues){
+  const C={Critical:'var(--crit)',High:'var(--high)',Medium:'var(--med)',Low:'var(--low)',Info:'var(--info)'};
+  return '<h4>Grouped findings ('+issues.length+')</h4><div class="gflist">'
+    +issues.map(i=>{const col=C[i.severity]||'var(--info)';
+      return '<div class="gfitem" style="border-left-color:'+col+'">'
+        +'<div class="gfhead"><span class="gfsev" style="color:'+col+'">'+esc(i.severity)+'</span>'
+        +'<span class="gfrid">'+esc(i.rule_id||'')+'</span><span class="gftitle">'+esc(i.title||'')+'</span></div>'
+        +(i.evidence?'<div class="gfev">'+esc(i.evidence)+'</div>':'')
+        +'</div>';}).join('')
+    +'</div>';
+}
 function findingCard(f){
  const d=f.detail||{}, col=SEV[f.severity];
  const isAI = f.source==='ai_generated';
  const isPath = f.source==='path_consolidation';
+ const isGroup = f.source==='sp_group';
  // Role/evidence cell: prefer a SPECIFIC role_in_finding, then the entity's concrete
  // evidence, and only fall back to the generic "Affected <kind>" placeholder last.
  // Previously role_in_finding won unconditionally, and api.py backfills it with that
- // placeholder - so every entity in every deterministic finding displayed "Affected
+ // placeholder, so every entity in every deterministic finding displayed "Affected
  // group" and the actual role, scope and assignment counts were never shown at all.
  const _evCell=e=>{
    const r=(e.role_in_finding||'').trim();
@@ -1183,18 +1548,22 @@ function findingCard(f){
  const ents=(f.entities||[]).slice(0,30).map(e=>`<tr><td class="nm">${esc(e.name)}</td><td class="kd">${esc((e.kind||'').replace('AZ',''))}</td><td class="ev">${_evCell(e)}</td></tr>`).join('');
  const affectedSubs=extractSubscriptions(f);
  const subSection=affectedSubs.length?`<h4>Affected subscriptions (${affectedSubs.length})</h4><table class="etable"><thead><tr><th>Subscription</th></tr></thead><tbody>${affectedSubs.map(s=>`<tr><td class="nm">${esc(s)}</td></tr>`).join('')}</tbody></table>`:'';
- const steps=(d.steps||[]).map(s=>`<li>${esc(s)}</li>`).join('');
+ // Prefer the proactive, review-first points (validate it is needed, scope it down) computed at
+ // finalize; fall back to the rule's own steps for older scans.
+ const steps=((f.remediation_points&&f.remediation_points.length?f.remediation_points:(d.steps||[]))).map(s=>`<li>${esc(s)}</li>`).join('');
  const FW=f.frameworks||{}; const fws=Object.keys(FW).map(k=>`<span class="fw">${esc(k)} · ${esc(FW[k])}</span>`).join('');
  const refs=(f.references||[]).filter(r=>/^https?:\/\//i.test(String(r))).map(r=>`<a href="${esc(r)}" rel="noopener noreferrer" target="_blank">reference ↗</a>`).join(' &nbsp; ');
  const _evRaw=f.evidence||[]; const _ev=Array.isArray(_evRaw)?_evRaw:(typeof _evRaw==='string'?(()=>{try{const p=JSON.parse(_evRaw);return Array.isArray(p)?p:[];}catch(e){return [];}})():[]); const evidenceList=_ev.map(e=>`<li>${esc(e)}</li>`).join('');
- const sourceTag = isPath
+ const sourceTag = isGroup
+   ? `<span class="srctag" style="background:rgba(155,165,188,.14);color:var(--tx2)" title="Consolidated findings for one service principal">⌱ SP report</span>`
+   : isPath
    ? `<span class="srctag path">◣ Attack Path</span>`
    : isAI
    ? `<span class="srctag ai" title="AI-generated · ${esc(DATA.ai_sonnet_model||'Sonnet')} → ${esc(DATA.ai_opus_model||'')} → ${esc(DATA.ai_haiku_model||'Haiku')} skeptic">✦ AI</span>`
    : `<span class="srctag det" title="Deterministic safety-net rule">⚙ det</span>`;
  const confBadge = isAI && typeof f.confidence==='number'
    ? `<span class="confbadge ${f.confidence>=80?'high':f.confidence>=50?'mid':'low'}">${f.confidence}% confidence</span>`
-   : (!isAI&&!isPath) ? `<span class="confbadge verified">✓ Verified fact</span>` : '';
+   : (!isAI&&!isPath&&!isGroup) ? `<span class="confbadge verified">✓ Verified fact</span>` : '';
  const _TIER={verified_fact:['Verified fact','vf'],corroborated:['Corroborated','cor'],supported:['Supported','sup'],lead:['Lead','lead']};
  const _tb=_TIER[f.quality_tier];
  const tierBadge = (_tb && !isPath) ? `<span class="tierbadge tb-${_tb[1]}" title="Evidence tier${typeof f.effective_confidence==='number'?' · effective confidence '+f.effective_confidence+'%':''}${f.needs_review?' · flagged for analyst review':''}">${_tb[0]}${f.needs_review?' ⚠':''}</span>` : '';
@@ -1202,8 +1571,8 @@ function findingCard(f){
    ? `<span class="xsubbadge" title="${esc('Compromise spans '+f.subscription_reach_count+' subscriptions'+((f.subscription_reach||[]).length?': '+(f.subscription_reach||[]).slice(0,12).join(', '):''))}">⇄ ${f.subscription_reach_count} subs</span>` : '';
  const chain = chainSVG(f.escalation_chain);
  // Strip legacy content-free placeholders left in already-stored scans:
- //   "[Skeptic downgraded: ]"          - empty reason
- //   "[Skeptic downgraded severity]"   - bare label, no rationale
+ //   "[Skeptic downgraded: ]"         , empty reason
+ //   "[Skeptic downgraded severity]"  , bare label, no rationale
  // Newer scans carry a full sentence explaining the transition, so nothing is lost.
  const _rn = (f.review_note || '')
    .replace(/\[Skeptic downgraded:\s*\]/g, '')
@@ -1233,13 +1602,21 @@ function findingCard(f){
  // item already exists for this finding, else a Create button + assignee + parent-epic inputs.
  const _ado = DATA._ado || {};
  const _wi = (DATA._workitems||{})[f._finding_key||''];
+ // Header marker so a finding that already has an Azure DevOps work item is visible in the list
+ // without expanding it. Links straight to the ticket created from PostureHound.
+ const adoBadge = _wi ? `<a class="adobadge" href="${esc(_wi.url||'#')}" target="_blank" rel="noopener" title="Azure DevOps work item ${esc(String(_wi.id||''))} created from PostureHound">◆ ADO #${esc(String(_wi.id||''))}</a>` : '';
  const adoControl = (HAS_SCAN_ID && _ado.enabled && _ado.configured && !isPath) ? (
    _wi ? `<h4>Azure DevOps</h4><div class="adowi" data-key="${esc(f._finding_key||'')}">
        <a class="adolink" href="${esc(_wi.url||'#')}" target="_blank" rel="noopener">✓ Work item #${esc(String(_wi.id||''))} ↗</a>
-       ${_wi.assignee?`<span class="muted small"> · ${esc(_wi.assignee)}</span>`:''}</div>`
+       ${_wi.assignee?`<span class="muted small"> · ${esc(_wi.assignee)}</span>`:''}
+       <button class="adoredo ghost" type="button" data-key="${esc(f._finding_key||'')}" data-wid="${esc(String(_wi.id||''))}" title="Delete this work item in Azure DevOps and raise a new one">↻ Delete &amp; re-raise</button>
+       <span class="adostatus muted small"></span></div>`
    : `<h4>Azure DevOps</h4><div class="adobox" data-key="${esc(f._finding_key||'')}">
-       <input class="adoassignee" type="text" placeholder="assignee (email / UPN)" value="${esc(_ado.default_assignee||'')}" autocomplete="off">
-       <input class="adoepic" type="text" placeholder="parent Epic id (optional)" value="${esc(_ado.default_parent_epic||'')}" autocomplete="off">
+       <input class="adoassignee" type="email" placeholder="assignee (email / UPN)" value="${esc(_ado.default_assignee||'')}" autocomplete="off">
+       <input class="adoepic" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="parent Epic id (optional)" title="Numeric work-item id only" value="${esc(_ado.default_parent_epic||'')}" autocomplete="off">
+       <label class="adoslalbl">Severity
+         <select class="adosev" title="Sets the work item priority and the SLA target date">${ORD.map(x=>`<option ${f.severity===x?'selected':''}>${x}</option>`).join('')}</select></label>
+       <span class="adosla muted small">SLA: ${adoSla(f.severity).date} · ${adoSla(f.severity).weeks}w</span>
        <button class="adocreate" type="button" data-key="${esc(f._finding_key||'')}">Create ${esc(_ado.work_item_type||'Feature')}</button>
        <span class="adostatus muted small"></span></div>`
  ) : '';
@@ -1248,7 +1625,7 @@ function findingCard(f){
  return `<div class="finding${f.best_practice?' bp':''}${isPath?' pathf':''}" data-id="${esc(f.rule_id||f.title)}">
   <div class="fhead"><span class="sevtick" style="background:${col}"></span>
     ${f.rule_id?`<span class="rid">${esc(f.rule_id)}</span>`:''}<span class="ftitle">${esc(f.title)}</span>
-    <span class="ftags">${statusBadge}${crossSubBadge}${confBadge}${sourceTag}<span class="cattag">${esc(f.category)}</span>
+    <span class="ftags">${statusBadge}${adoBadge}${crossSubBadge}${confBadge}${sourceTag}<span class="cattag">${esc(f.category)}</span>
       <span class="fcount">${f.path_count?f.path_count+' paths':(f.affected_count||(f.entities||[]).length)+' affected'}</span>
       ${tierBadge}
       <span class="sevtag" style="background:${col}">${esc(f.severity)}</span>
@@ -1277,7 +1654,9 @@ function findingCard(f){
     ${valControl}
     ${adoControl}
     <h4>Why it matters</h4><p>${esc(d.why || f.why_it_matters || '-')}</p>
+    ${(d.impact||f.impact)?`<h4>Impact</h4><p>${esc(d.impact||f.impact)}</p>`:''}
     <h4>Attack scenario</h4>${fmtScenario(f.attack_scenario||d.scenario||'')}
+    ${isGroup?groupedIssuesBlock(f._grouped||[]):''}
     ${chain?`<h4>Escalation / lateral-movement path</h4><div class="chaingraph">${chain}</div>`:''}
     ${maxImpactBlock(f)}
     <h4>Affected entities (${(f.entities||[]).length})</h4>
@@ -1312,7 +1691,7 @@ function paintFindings(){
  // Always present findings worst-first. ORD is the severity order; ties keep their
  // stored order (stable sort), which is rule-id order within a severity.
  const sevRank=s=>{const i=ORD.indexOf(s);return i<0?ORD.length:i;};
- const items=DATA.findings.filter(matchF)
+ const items=_consolidateReportSPs(DATA.findings).filter(matchF)
    .map((f,i)=>[f,i])
    .sort((a,b)=>(sevRank(a[0].severity)-sevRank(b[0].severity))||(a[1]-b[1]))
    .map(x=>x[0]);
@@ -1342,40 +1721,72 @@ function paintFindings(){
      };
    });
  });
+ // Shared: the "work item exists" inner HTML (link + Delete & re-raise), and its wiring.
+ function _adoLinkInner(wi, key){
+   return `<a class="adolink" href="${wi.url||'#'}" target="_blank" rel="noopener">✓ Work item #${wi.id||''} ↗</a>`
+     +(wi.severity?` <span class="muted small">· ${wi.severity}</span>`:'')
+     +(wi.target_date?` <span class="muted small">· due ${wi.target_date}</span>`:'')
+     +(wi.assignee?` <span class="muted small">· ${wi.assignee}</span>`:'')
+     +` <button class="adoredo ghost" type="button" data-key="${key}" data-wid="${wi.id||''}" title="Delete this work item in Azure DevOps and raise a new one">↻ Delete &amp; re-raise</button>`
+     +` <span class="adostatus muted small"></span>`;
+ }
+ function _wireAdoRedo(box){
+   const rb=box.querySelector('.adoredo'), st=box.querySelector('.adostatus');
+   if(!rb) return;
+   rb.onclick=async(ev)=>{
+     ev.stopPropagation();
+     if(!confirm('Delete work item #'+rb.dataset.wid+' in Azure DevOps and allow a fresh ticket to be raised?\\n\\nThe work item is moved to the Azure DevOps Recycle Bin (recoverable).')) return;
+     rb.disabled=true; if(st){st.textContent='Deleting…'; st.style.color='';}
+     try{
+       const r=await fetch(`/api/scans/${DATA._scan_id}/findings/${rb.dataset.key}/workitem`,{method:'DELETE'});
+       const j=await r.json();
+       if(!r.ok) throw new Error(j.detail||'Failed to delete work item');
+       if(DATA._workitems) delete DATA._workitems[rb.dataset.key];
+       renderFindings();   // re-render so the Create box returns for a fresh raise
+     }catch(e){ if(st){st.textContent=e.message; st.style.color='var(--crit)';} rb.disabled=false; }
+   };
+ }
+ qa('.adowi',list).forEach(box=>{ box.addEventListener('click', e=>e.stopPropagation()); _wireAdoRedo(box); });
  qa('.adobox',list).forEach(box=>{
    box.addEventListener('click', e=>e.stopPropagation());
    const btn=box.querySelector('.adocreate'), st=box.querySelector('.adostatus');
+   const sevSel=box.querySelector('.adosev'), slaEl=box.querySelector('.adosla');
+   // The SLA target date is derived from the chosen severity, live.
+   if(sevSel&&slaEl) sevSel.onchange=()=>{const s=adoSla(sevSel.value);slaEl.textContent='SLA: '+s.date+' · '+s.weeks+'w';};
    if(btn) btn.onclick=async()=>{
      btn.disabled=true; st.textContent='Creating…'; st.style.color='';
      try{
        const assignee=(box.querySelector('.adoassignee').value||'').trim();
        const epic=(box.querySelector('.adoepic').value||'').trim();
+       const sev=sevSel?sevSel.value:'';
        const r=await fetch(`/api/scans/${DATA._scan_id}/findings/${box.dataset.key}/workitem`,{
          method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-         body:'assignee='+encodeURIComponent(assignee)+'&parent_epic='+encodeURIComponent(epic)});
+         body:'assignee='+encodeURIComponent(assignee)+'&parent_epic='+encodeURIComponent(epic)+'&severity='+encodeURIComponent(sev)});
        const j=await r.json();
        if(!r.ok) throw new Error(j.detail||'Failed to create work item');
        const wi=j.workitem||{};
        (DATA._workitems=DATA._workitems||{})[box.dataset.key]=wi;   // so re-renders show the link
-       box.innerHTML=`<a class="adolink" href="${wi.url||'#'}" target="_blank" rel="noopener">✓ Work item #${wi.id||''} ↗</a>`
-         +(wi.assignee?` <span class="muted small">· ${wi.assignee}</span>`:'')
+       box.className='adowi';
+       box.innerHTML=_adoLinkInner(wi, box.dataset.key)
          +(j.created===false?' <span class="muted small">(already existed)</span>':'');
+       _wireAdoRedo(box);   // the just-created link also offers Delete & re-raise
      }catch(e){ st.textContent=e.message; st.style.color='var(--crit)'; btn.disabled=false; }
    };
  });
 }
 function renderFindings(){
- const nonPathF = DATA.findings.filter(f=>f.source!=='path_consolidation');
+ const nonPathF = DATA.findings.filter(f=>f.source!=='path_consolidation' && !_isAILead(f));
  const chips=[['all','All',nonPathF.length],...ORD.map(s=>[s,s,counts[s]])];
  const v=$('#view'); v.innerHTML=`
   ${scanHealthBanner()}
   ${aiBanner()}
   ${analysisGapBanner()}
   <div class="toolbar">
-    <input class="search" id="q" placeholder="Search findings \u2014 title, category\u2026" value="${esc(state.q)}">
+    <input class="search" id="q" placeholder="Search findings, title, category\u2026" value="${esc(state.q)}">
     <div class="chips" id="chips">
      ${chips.map(c=>`<span class="chip${!state.bp&&!state.paths&&state.sev===c[0]?' on':''}" data-sev="${c[0]}">${c[1]} <span class="c">${c[2]}</span></span>`).join('')}
      <span class="chip${state.bp?' on':''}" data-bp="1">Best practice <span class="c">${bpF.length}</span></span>
+     ${leadF.length?`<span class="chip${state.leads?' on':''}" data-leads="1" title="Lower-confidence / lead-tier AI findings, uncorroborated hypotheses set aside from the main list and the posture counts, for manual review">\u25C7 Leads <span class="c">${leadF.length}</span></span>`:''}
      ${HAS_PATHS?`<span class="chip chip-path" data-gopaths="1">\u25E3 Attack Paths <span class="c">${PATH_FINDINGS.length||PH_CHOKES.length}</span></span>`:''}
     </div>
   </div>
@@ -1384,8 +1795,9 @@ function renderFindings(){
  $('#q').oninput=e=>{state.q=e.target.value;paintFindings();};
  qa('.chip',v).forEach(ch=>ch.onclick=()=>{
    if(ch.dataset.gopaths){ go('paths'); return; }
-   if(ch.dataset.bp){state.bp=true;state.sev='all';}
-   else{state.bp=false;state.sev=ch.dataset.sev;}
+   if(ch.dataset.leads){state.leads=true;state.bp=false;state.sev='all';}
+   else if(ch.dataset.bp){state.leads=false;state.bp=true;state.sev='all';}
+   else{state.leads=false;state.bp=false;state.sev=ch.dataset.sev;}
    renderFindings();});
 }
 async function renderRoadmap(){
@@ -1394,9 +1806,9 @@ async function renderRoadmap(){
  try{ const r=await fetch(`/api/scans/${DATA._scan_id}/roadmap`); rm=await r.json(); }catch(e){}
  if(!rm){ v.innerHTML='<div class="card muted">Could not load the action plan.</div>'; return; }
  const bucketMeta = {
-   now:{label:'Now \u2014 Critical', hint:'Fix immediately. These are direct paths to Tier-0 or active exposure.', col:'var(--crit)'},
-   next:{label:'Next \u2014 High', hint:'Address this sprint. Real risk, not yet an active Tier-0 path.', col:'var(--high)'},
-   backlog:{label:'Backlog \u2014 Medium/Low', hint:'Track and schedule; lower urgency.', col:'var(--low)'},
+   now:{label:'Now, Critical', hint:'Fix immediately. These are direct paths to Tier-0 or active exposure.', col:'var(--crit)'},
+   next:{label:'Next, High', hint:'Address this sprint. Real risk, not yet an active Tier-0 path.', col:'var(--high)'},
+   backlog:{label:'Backlog, Medium/Low', hint:'Track and schedule; lower urgency.', col:'var(--low)'},
  };
  const section = (key)=>{
    const items=rm[key]||[];
@@ -1426,7 +1838,7 @@ async function renderRoadmap(){
  });
 }
 
-// Cross-subscription blast radius is no longer a separate menu - it is woven into the
+// Cross-subscription blast radius is no longer a separate menu, it is woven into the
 // Attack Paths view (and surfaced inline on every finding as "⇄ N subs"). This builds the two
 // bridge/connection cards embedded within the Attack Paths view.
 function crossSubCards(){
@@ -1440,7 +1852,7 @@ function crossSubCards(){
    }
    if(!b.indirect)
      return `<span class="mg-tag" title="Holds cross-subscription RBAC directly">direct RBAC</span> ${esc((b.roles||[]).slice(0,3).join(', '))}${(b.roles||[]).length>3?' +'+((b.roles.length)-3):''}${b.via_management_group?' <span class="mg-tag">via MG</span>':''}`;
-   return `<span class="mg-tag" title="Bridges by combining grants no single group provides - membership of several groups, an owned service principal, or PIM eligibility">combines grants</span> ${esc((b.roles||[]).slice(0,2).join(', '))}${b.via_management_group?' <span class="mg-tag">via MG</span>':''}`;
+   return `<span class="mg-tag" title="Bridges by combining grants no single group provides, membership of several groups, an owned service principal, or PIM eligibility">combines grants</span> ${esc((b.roles||[]).slice(0,2).join(', '))}${b.via_management_group?' <span class="mg-tag">via MG</span>':''}`;
  };
  const bridgeRows=bridges.slice(0,60).map(b=>`<tr>
    <td class="nm">${esc(b.name)}</td>
@@ -1458,8 +1870,8 @@ function crossSubCards(){
   </tr>`).join('');
  return `
   <div class="card" style="margin-top:16px">
-   <h3 class="cardh">Cross-subscription bridges <span class="muted small">(top ${Math.min(bridges.length,60)} of ${bridges.length}, groups first - the highest-leverage fix - then direct holders, then grant-combiners)</span></h3>
-   <p class="small muted" style="margin:2px 0 10px">Principals with STANDING access to more than one subscription - held directly, granted by a management-group role, or inherited through a group or owned service principal. Groups are listed first because fixing one group severs the reach for all its members. (Escalation-only reach - a principal that can only escalate to an admin who spans subscriptions - is an attack path, shown under Attack Paths, not a standing bridge here.)</p>
+   <h3 class="cardh">Cross-subscription bridges <span class="muted small">(top ${Math.min(bridges.length,60)} of ${bridges.length}, groups first, the highest-leverage fix, then direct holders, then grant-combiners)</span></h3>
+   <p class="small muted" style="margin:2px 0 10px">Principals with STANDING access to more than one subscription, held directly, granted by a management-group role, or inherited through a group or owned service principal. Groups are listed first because fixing one group severs the reach for all its members. (Escalation-only reach, a principal that can only escalate to an admin who spans subscriptions, is an attack path, shown under Attack Paths, not a standing bridge here.)</p>
    <div style="overflow-x:auto"><table class="etable csbtable"><thead><tr>
      <th>Principal</th><th>Type</th><th style="text-align:center">Subs</th><th>How the reach is gained</th>
      <th style="text-align:center">Reaches Tier-0</th><th style="text-align:right">Members / blast</th>
@@ -1483,7 +1895,7 @@ function renderCoverage(){
  const unconsumed=coll.unconsumed_kinds||[];
  const hasWarn=ws.some(w=>w.level==='warning');
  const warnBanner=ws.length?`<div class="banner${hasWarn?' warn':''}">
-   <h3><span class="bi">${hasWarn?'⚠':'ℹ'}</span> Collection health - ${hasWarn?'results may be incomplete':'notes'}</h3>
+   <h3><span class="bi">${hasWarn?'⚠':'ℹ'}</span> Collection health, ${hasWarn?'results may be incomplete':'notes'}</h3>
    <ul>${ws.map(w=>`<li><span class="wl">${esc((w.level||'').toUpperCase())}</span>${esc(w.message)}</li>`).join('')}</ul></div>`:'';
  const sigRows=[
    ['Tenant ID',sig.tenant?'✓ Present':'✗ Missing'],
@@ -1543,13 +1955,13 @@ function renderCoverage(){
   }).join('');
  const specPanel=specKeys.length?`<div class="card" style="margin-top:18px">
     <h2 class="section" style="margin-top:0">Analyst coverage</h2>
-    <div class="muted small" style="margin-bottom:12px">${ranSpecs}/${specKeys.length} specialist analysts completed${Object.keys(failedMap).length?` · <span style="color:var(--crit)">${Object.keys(failedMap).length} did not run - those domains are unassessed</span>`:''}</div>
+    <div class="muted small" style="margin-bottom:12px">${ranSpecs}/${specKeys.length} specialist analysts completed${Object.keys(failedMap).length?` · <span style="color:var(--crit)">${Object.keys(failedMap).length} did not run, those domains are unassessed</span>`:''}</div>
     <table class="etable"><tbody>${specRows}</tbody></table>
    </div>`:'';
 
  // Threat-technique coverage: which adversary tactics the tenant's live findings span,
  // grouped by the Azure Threat Matrix tactic stamped on every finding. This turns the
- // per-finding technique chips into a portfolio view - where the exposure concentrates.
+ // per-finding technique chips into a portfolio view, where the exposure concentrates.
  const TACTIC_ORDER=['Reconnaissance','Initial Access','Execution','Persistence',
    'Privilege Escalation','Credential Access','Impact'];
  const tacF=(DATA.findings||[]).filter(f=>!f.best_practice&&f.source!=='path_consolidation');
@@ -1573,13 +1985,13 @@ function renderCoverage(){
  // Deterministic checks that could not run: the node kind was present but the
  // specific data the check reads (a control property, relationship records) was
  // never collected. Surfacing these is the difference between "control OK" and
- // "control never assessed" - a silent empty result must not read as a clean pass.
+ // "control never assessed", a silent empty result must not read as a clean pass.
  const na=(DATA.not_assessed||[]);
  const naRows=na.slice().sort((a,b)=>(a.rule_id||'').localeCompare(b.rule_id||''))
    .map(n=>`<tr><td class="mono small">${esc(n.rule_id||'')}</td><td class="small">${esc(n.title||'')}</td><td class="mono small muted">${esc(n.reason||'')}</td></tr>`).join('');
  const naPanel=na.length?`<div class="card" style="margin-top:18px">
     <h2 class="section" style="margin-top:0">Checks not assessed</h2>
-    <div class="muted small" style="margin-bottom:12px">${na.length} deterministic check${na.length===1?'':'s'} could not run - the required data was not in this collection. These are <b>not</b> clean passes; re-collect the missing attributes to assess them.</div>
+    <div class="muted small" style="margin-bottom:12px">${na.length} deterministic check${na.length===1?'':'s'} could not run, the required data was not in this collection. These are <b>not</b> clean passes; re-collect the missing attributes to assess them.</div>
     <table class="etable"><thead><tr><th>Check</th><th>Title</th><th>Reason</th></tr></thead><tbody>${naRows}</tbody></table>
    </div>`:'';
 
@@ -1620,7 +2032,7 @@ function renderPaths(){
    {n:PH_CHOKES.length, l:'Chokepoints', hi:true},
  ];
  const tileHtml=tiles.map(t=>`<div class="bhtile${t.crit?' bhtile-hi':''}"><div class="n"${t.crit?' style="color:var(--crit)"':(t.hi?' style="color:var(--accent)"':'')}>${esc(String(t.n))}</div><div class="l">${esc(t.l)}</div></div>`).join('');
- // 1) Maximum-impact paths - each finding's worst-case route to its highest-value target.
+ // 1) Maximum-impact paths, each finding's worst-case route to its highest-value target.
  const rows=mpaths.slice(0,120).map(p=>{
    const via=(p.hops||[]).map(h=>h.via).filter(Boolean).join(' → ')||'direct';
    const col=SEV[p.severity]||'var(--muted)';
@@ -1641,11 +2053,11 @@ function renderPaths(){
   </div>`:'';
  // 2) Cross-subscription bridges (folded in, not a separate menu).
  const csSection=crossSubCards();
- // 3) Consolidated routes by source identity - every independent route per source.
+ // 3) Consolidated routes by source identity, every independent route per source.
  const consolSection=PATH_FINDINGS.length?`<h2 class="section">Consolidated routes by source (${PATH_FINDINGS.length})</h2>
    <p class="muted small" style="margin:-6px 0 10px">Each source identity below reaches Tier-0 by several independent routes; expand a card for every route it can take.</p>
    <div id="pathflist">${PATH_FINDINGS.map(findingCard).join('')}</div>`:'';
- // 4) Chokepoints - the nodes that sever the most paths per fix.
+ // 4) Chokepoints, the nodes that sever the most paths per fix.
  const chokeRows=PH_CHOKES.map((c,i)=>`
   <div class="chokerow">
    <div class="chokehead">
@@ -1665,7 +2077,7 @@ function renderPaths(){
     ${renderCmdList(c.remediation_commands)}
    </div>
   </div>`).join('');
- const chokeSection=PH_CHOKES.length?`<h2 class="section">Chokepoints - highest-leverage remediation</h2>
+ const chokeSection=PH_CHOKES.length?`<h2 class="section">Chokepoints, highest-leverage remediation</h2>
    <div class="card" style="margin-bottom:14px">
     <p class="muted small" style="margin:0 0 10px">Intermediate nodes appearing in the most attack paths. Hardening one severs every path that runs through it, so it removes the most risk per action taken.</p>
     ${chokeRows}
@@ -1704,7 +2116,7 @@ async function renderQuality(){
     <div class="card">
       <h3>Recall proxy <span class="muted small">(false-negative signal)</span></h3>
       <div class="qbig">${RP.unexplained_entry_count||0}<span class="qbigu">/ ${RP.tier0_reaching_entries||0} tier-0 paths unexplained</span></div>
-      ${(RP.unexplained_entry_count||0)===0?'<p class="qok">✓ Every tier-0 escalation path passes through a flagged entity - no orphaned paths.</p>':`<p class="qwarn">Possible blind spots: ${esc((RP.unexplained_samples||[]).slice(0,6).join(', '))}</p>`}
+      ${(RP.unexplained_entry_count||0)===0?'<p class="qok">✓ Every tier-0 escalation path passes through a flagged entity, no orphaned paths.</p>':`<p class="qwarn">Possible blind spots: ${esc((RP.unexplained_samples||[]).slice(0,6).join(', '))}</p>`}
       <p class="muted small">${esc(RP.note||'')}</p>
     </div>
     <div class="card qspan">
@@ -1736,7 +2148,7 @@ function renderGraph(){
   // Embed the live app's graph explorer (fcose layout, prebuilt queries, blast radius, node
   // detail) scoped to THIS scan. embed=1 strips the app chrome so only the explorer shows.
   v.innerHTML=`<div class="section-head"><h2>Attack Graph</h2></div>
-    <p class="muted" style="margin:0 0 12px;font-size:13px">Interactive escalation map for this scan - every route to Tier-0. Click a node or edge for its details; use the left panel for prebuilt queries, blast radius and saved views. <a href="/#/graph/${sid}" target="_blank" style="color:var(--accent)">Open full screen ↗</a></p>
+    <p class="muted" style="margin:0 0 12px;font-size:13px">Interactive escalation map for this scan, every route to Tier-0. Click a node or edge for its details; use the left panel for prebuilt queries, blast radius and saved views. <a href="/#/graph/${sid}" target="_blank" style="color:var(--accent)">Open full screen ↗</a></p>
     <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg)">
       <iframe src="/?embed=1#/graph/${sid}" title="Attack graph for this scan" loading="lazy"
         style="width:100%;height:calc(100vh - 210px);min-height:560px;border:0;display:block"></iframe>
@@ -1751,7 +2163,7 @@ function renderUsage(){
   const rows=models.map(m=>{const d=u.by_model[m];
     return `<tr><td class="mono">${esc(m)}</td><td>${d.calls}</td><td>${fmt(d.in)}</td><td>${fmt(d.out)}</td><td>${fmt(d.cache_read)}</td><td>${fmt(d.cache_write)}</td><td>${usd(d.cost)}</td></tr>`;}).join('');
   v.innerHTML=`<div class="section-head"><h2>AI Usage</h2></div>
-    <p class="muted" style="margin:0 0 14px;font-size:13px">Token counts are exact (reported by the API). The dollar figure is an <b>estimate</b> = tokens × the rate table in <span class="mono">usage.py</span> - confirm it against your current Anthropic pricing.</p>
+    <p class="muted" style="margin:0 0 14px;font-size:13px">Token counts are exact (reported by the API). The dollar figure is an <b>estimate</b> = tokens × the rate table in <span class="mono">usage.py</span>, confirm it against your current Anthropic pricing.</p>
     <div class="statgrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px">
       <div class="statbox card" style="margin:0"><div class="statnum" style="font-size:26px;font-weight:700">${usd(u.estimated_cost_usd)}</div><div class="muted small">Estimated cost</div></div>
       <div class="statbox card" style="margin:0"><div class="statnum" style="font-size:26px;font-weight:700">${t.calls}</div><div class="muted small">AI calls</div></div>

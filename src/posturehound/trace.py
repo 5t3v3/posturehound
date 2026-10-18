@@ -7,7 +7,7 @@ grounding / skeptic / coherence decision. Written to two files that grow in real
     ~/.posturehound/scan_traces/<id>.jsonl   one JSON record per event, for tooling
 
 Thread-safe: the 17 specialists run in parallel and all write through one TraceWriter.
-Local only - a trace contains tenant specifics and never leaves the machine or the report.
+Local only, a trace contains tenant specifics and never leaves the machine or the report.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ TRACE_DIR = DATA_DIR / "scan_traces"
 
 
 def _clip(s, n=2000):
-    # The trace is a COMPLETE, local, human-readable record of the run - it is deliberately
+    # The trace is a COMPLETE, local, human-readable record of the run, it is deliberately
     # not truncated. `n` is retained only for call-site compatibility and is ignored: the full
     # model reasoning, every candidate's rationale, and each decision's detail are written
     # verbatim. This is write-only I/O built from responses the API has ALREADY returned; the
@@ -94,7 +94,7 @@ class TraceWriter:
                 "malformed": "✗", "downgraded": "▼"}.get(verdict, "·")
         meta = " ".join(x for x in (severity, f"conf {confidence}" if confidence is not None else "",
                                     f"{entities} ent" if entities else "") if x)
-        tail = f" - {reason}" if reason else ""
+        tail = f", {reason}" if reason else ""
         head = f"{self._ts()}    {mark} [{verdict.upper()}] \"{_clip(title, 120)}\"" \
                + (f"  ({meta})" if meta else "") + tail
         body = ""

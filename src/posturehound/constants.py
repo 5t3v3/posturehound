@@ -8,7 +8,7 @@ from __future__ import annotations
 
 # Entra (Azure AD) directory roles that are effectively Tier-0 (tenant takeover
 # or able to escalate to it). Keyed by roleTemplateId with display-name fallback.
-# Broad set of privileged Entra roles - used to NAME role nodes and for "privileged"
+# Broad set of privileged Entra roles, used to NAME role nodes and for "privileged"
 # flagging. Tier-0 (below) is a curated subset of this.
 PRIVILEGED_ENTRA_ROLE_TEMPLATES: dict[str, str] = {
     "62e90394-69f5-4237-9190-012177145e10": "Global Administrator",
@@ -27,7 +27,7 @@ PRIVILEGED_ENTRA_ROLE_TEMPLATES: dict[str, str] = {
     "8ac3fc64-6eca-42ea-9e69-59f4c7b60eb2": "Hybrid Identity Administrator",
     "e00e864a-17c5-4a4b-9c06-f5b95a8d5bd8": "Partner Tier2 Support",
     # Partner Tier1 Support: like Password Administrator (already Tier-0 above), it can reset
-    # passwords / invalidate tokens for non-admins - a real takeover primitive. Included for
+    # passwords / invalidate tokens for non-admins, a real takeover primitive. Included for
     # parity; leaving it out let a principal holding only this legacy role escape Tier-0.
     "4ba39ca4-527c-499a-b93d-d9b492c50246": "Partner Tier1 Support",
     "3a2c62db-5318-420d-8d74-23affee5d9d5": "Intune Administrator",
@@ -45,7 +45,7 @@ PRIVILEGED_ENTRA_ROLE_NAMES = {v.lower() for v in PRIVILEGED_ENTRA_ROLE_TEMPLATE
 # tenant-takeover path (grant/assign roles, add credentials to any app, forge/sync
 # identities, reset admin auth). Operational admin roles (Exchange/SharePoint/Intune/Cloud
 # Device/Conditional Access/Auth/Password/Domain Name/Security/Partner Tier1) are privileged
-# but NOT Tier-0 - a compromise there does not by itself yield tenant control.
+# but NOT Tier-0, a compromise there does not by itself yield tenant control.
 TIER0_ENTRA_ROLE_TEMPLATES: dict[str, str] = {tpl: PRIVILEGED_ENTRA_ROLE_TEMPLATES[tpl] for tpl in (
     "62e90394-69f5-4237-9190-012177145e10",  # Global Administrator
     "e8611ab8-c189-46e8-94e1-60213ab1f814",  # Privileged Role Administrator
@@ -107,12 +107,12 @@ DANGEROUS_GRAPH_APP_ROLES: dict[str, dict] = {
     },
     "RoleManagement.ReadWrite.Exchange": {
         # NOT CanGrantRole: this manages Exchange Online RBAC (mailbox/transport roles), NOT
-        # Entra directory-role assignment - it cannot assign Global Administrator. Mapping it
+        # Entra directory-role assignment, it cannot assign Global Administrator. Mapping it
         # to CanGrantRole fabricated an escalation edge to every Tier-0 directory role from a
         # permission commonly granted to mail/compliance apps. It stays flagged by AZ-APP-002
         # via this membership; it just no longer derives a false Tier-0 path.
         "primitive": "CanManageExchange",
-        "impact": "Can manage Exchange Online RBAC roles (mailbox access escalation) - not Entra directory roles.",
+        "impact": "Can manage Exchange Online RBAC roles (mailbox access escalation), not Entra directory roles.",
         "tier": "high",
     },
     "User.ReadWrite.All": {
@@ -134,7 +134,7 @@ DANGEROUS_GRAPH_APP_ROLES: dict[str, dict] = {
     },
     "UserAuthenticationMethod.ReadWrite.All": {
         "primitive": "CanResetPassword",
-        "impact": "Can register/replace authentication methods (incl. MFA) for users - account takeover.",
+        "impact": "Can register/replace authentication methods (incl. MFA) for users, account takeover.",
         "tier": "high",
     },
     "Policy.ReadWrite.ConditionalAccess": {
@@ -154,11 +154,11 @@ DANGEROUS_GRAPH_APP_ROLES: dict[str, dict] = {
         # (sync manipulation / soft-match takeover) and stays flagged by AZ-APP-002, but it no
         # longer derives a false Tier-0 escalation path.
         "primitive": "CanAbuseDirSync",
-        "impact": "Can manage directory synchronization - hybrid-identity abuse (sync manipulation, soft-match takeover).",
+        "impact": "Can manage directory synchronization, hybrid-identity abuse (sync manipulation, soft-match takeover).",
         "tier": "high",
     },
     "PrivilegedAccess.ReadWrite.AzureADGroup": {
-        # CanAddMember, not CanGrantRole: this manages PIM for GROUPS - it can activate a
+        # CanAddMember, not CanGrantRole: this manages PIM for GROUPS, it can activate a
         # Tier-0 role-assignable GROUP membership, not assign a directory role directly.
         # CanGrantRole overstated it as "can assign Global Administrator"; CanAddMember
         # models the real path (through a Tier-0 role-assignable group), which the
@@ -174,35 +174,35 @@ DANGEROUS_GRAPH_APP_ROLES: dict[str, dict] = {
     },
     "RoleManagementPolicy.ReadWrite.Directory": {
         "primitive": "CanWeakenControls",
-        "impact": "Can modify PIM activation policies - remove approval requirements, extend durations, disable MFA for Tier-0 role activations.",
+        "impact": "Can modify PIM activation policies, remove approval requirements, extend durations, disable MFA for Tier-0 role activations.",
         "tier": "high",
     },
-    # Domain federation - can add an external IdP to the tenant, enabling tokens
+    # Domain federation, can add an external IdP to the tenant, enabling tokens
     # to be issued for any user by an attacker-controlled identity provider.
     "Domain.ReadWrite.All": {
         "primitive": "CanFederateTenant",
-        "impact": "Can register federated domains and configure external identity providers - attacker-controlled IdP can issue tokens for any tenant user.",
+        "impact": "Can register federated domains and configure external identity providers, attacker-controlled IdP can issue tokens for any tenant user.",
         "tier": "high",
     },
-    # Data-exfiltration application permissions - broad read/write on org data.
+    # Data-exfiltration application permissions, broad read/write on org data.
     "Mail.ReadWrite.All": {
         "primitive": "CanExfiltrateMail",
-        "impact": "Can read, write and delete all mail for every user - mass data exfiltration, business email compromise, message tampering.",
+        "impact": "Can read, write and delete all mail for every user, mass data exfiltration, business email compromise, message tampering.",
         "tier": "medium",
     },
     "Mail.Read.All": {
         "primitive": "CanExfiltrateMail",
-        "impact": "Can silently read all mail for every user - reconnaissance and credential harvesting.",
+        "impact": "Can silently read all mail for every user, reconnaissance and credential harvesting.",
         "tier": "medium",
     },
     "Mail.Send": {
         "primitive": "CanSendMail",
-        "impact": "Can send mail as any user - phishing, business email compromise, impersonation.",
+        "impact": "Can send mail as any user, phishing, business email compromise, impersonation.",
         "tier": "medium",
     },
     "Files.ReadWrite.All": {
         "primitive": "CanExfiltrateFiles",
-        "impact": "Can read, write and delete all OneDrive files for every user - full file system access.",
+        "impact": "Can read, write and delete all OneDrive files for every user, full file system access.",
         "tier": "medium",
     },
     "Sites.ReadWrite.All": {
@@ -212,54 +212,218 @@ DANGEROUS_GRAPH_APP_ROLES: dict[str, dict] = {
     },
     "Contacts.ReadWrite.All": {
         "primitive": "CanExfiltrateContacts",
-        "impact": "Can read and modify all Outlook contacts - useful for targeted phishing and org-chart reconnaissance.",
+        "impact": "Can read and modify all Outlook contacts, useful for targeted phishing and org-chart reconnaissance.",
         "tier": "low",
     },
     "ChannelMessage.Read.All": {
         "primitive": "CanReadTeams",
-        "impact": "Can read all Teams channel messages - intercept sensitive communications, credentials in chat.",
+        "impact": "Can read all Teams channel messages, intercept sensitive communications, credentials in chat.",
         "tier": "medium",
     },
     "Chat.ReadWrite.All": {
         "primitive": "CanReadTeams",
-        "impact": "Can read and write all Teams chat messages - intercept private conversations.",
+        "impact": "Can read and write all Teams chat messages, intercept private conversations.",
         "tier": "medium",
     },
     # Directory management & security-control permissions. These do not derive a
     # specific escalation edge (unknown primitives fall through to a tag only), but a
-    # principal holding them - especially an ownerless or Tier-0 one - is genuinely
+    # principal holding them, especially an ownerless or Tier-0 one, is genuinely
     # dangerous, and they were previously invisible to the dangerous-permission rules
     # (AZ-APP-002/013/022). AdministrativeUnit + SecurityConfiguration are the two the
     # AKS-Spoke security SP held that the deterministic set missed entirely.
     "AdministrativeUnit.ReadWrite.All": {
         "primitive": "CanManageAdminUnits",
-        "impact": "Can create administrative units and scoped role assignments within them - a directory-management primitive used to hide privilege and stage scoped escalation.",
+        "impact": "Can create administrative units and scoped role assignments within them, a directory-management primitive used to hide privilege and stage scoped escalation.",
         "tier": "high",
     },
     "SecurityConfiguration.ReadWrite.All": {
         "primitive": "CanWeakenControls",
-        "impact": "Can modify tenant security configuration and recommendations (Defender/Secure Score) - weaken or disable protective controls tenant-wide.",
+        "impact": "Can modify tenant security configuration and recommendations (Defender/Secure Score), weaken or disable protective controls tenant-wide.",
         "tier": "high",
     },
     "Policy.ReadWrite.PermissionGrant": {
         "primitive": "CanWeakenControls",
-        "impact": "Can change consent (permission-grant) policies - enable users to consent to apps, opening the illicit-consent-grant path.",
+        "impact": "Can change consent (permission-grant) policies, enable users to consent to apps, opening the illicit-consent-grant path.",
         "tier": "high",
     },
     "DeviceManagementConfiguration.ReadWrite.All": {
         "primitive": "CanManageDevices",
-        "impact": "Can write Intune device-configuration and compliance policies - push scripts/profiles that execute on all managed endpoints (fleet-wide code execution).",
+        "impact": "Can write Intune device-configuration and compliance policies, push scripts/profiles that execute on all managed endpoints (fleet-wide code execution).",
         "tier": "high",
     },
     "DeviceManagementApps.ReadWrite.All": {
         "primitive": "CanManageDevices",
-        "impact": "Can deploy applications through Intune to managed devices - fleet-wide code execution.",
+        "impact": "Can deploy applications through Intune to managed devices, fleet-wide code execution.",
         "tier": "high",
     },
     "Organization.ReadWrite.All": {
         "primitive": "CanManageDirectory",
         "impact": "Can modify organisation-level settings and branding tenant-wide.",
         "tier": "medium",
+    },
+    # ---- Security-watchlist coverage additions (dangerous Microsoft Graph APPLICATION
+    # permissions). CanWeakenControls → tagged + flagged by AZ-APP-009; exfil primitives →
+    # flagged by AZ-APP-014; the rest are flagged by AZ-APP-002 (no derived edge). ----
+    # Control / policy weakening (defence evasion), AZ-APP-009:
+    "Policy.ReadWrite.Authorization": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can change tenant authorization policy, e.g. re-enable user app registration/consent, relax default user permissions.",
+        "tier": "high",
+    },
+    "Policy.ReadWrite.AuthenticationFlows": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can change authentication-flow policy (self-service sign-up, flows), weaken sign-in controls.",
+        "tier": "high",
+    },
+    "Policy.ReadWrite.CrossTenantAccess": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can change cross-tenant access policy, trust external identities / B2B inbound that bypass local controls.",
+        "tier": "high",
+    },
+    "Policy.ReadWrite.ApplicationConfiguration": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can change application-configuration policy tenant-wide.",
+        "tier": "high",
+    },
+    "RoleManagementPolicy.ReadWrite.AzureADGroup": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can modify PIM activation policy for role-assignable groups, remove approval/MFA on Tier-0 group activation.",
+        "tier": "high",
+    },
+    "DelegatedPermissionGrant.ReadWrite.All": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can create delegated (OAuth2) permission grants directly, grant any delegated scope to any app, the illicit-consent path without a user.",
+        "tier": "high",
+    },
+    "ConsentRequest.ReadWrite.All": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can manage admin-consent requests, approve app consent that governance would otherwise gate.",
+        "tier": "medium",
+    },
+    "SecurityActions.ReadWrite.All": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can modify security actions/config, disable or tamper protective responses.",
+        "tier": "high",
+    },
+    "SecurityAlert.ReadWrite.All": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can modify/dismiss security alerts, hide attacker activity (defence evasion).",
+        "tier": "high",
+    },
+    "SecurityEvents.ReadWrite.All": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can update security events, suppress or tamper detections.",
+        "tier": "high",
+    },
+    "SecurityIncident.ReadWrite.All": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can modify/close security incidents, hide an intrusion from responders.",
+        "tier": "high",
+    },
+    "IdentityRiskEvent.ReadWrite.All": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can dismiss/modify Identity Protection risk events, mask risky sign-ins.",
+        "tier": "high",
+    },
+    "IdentityRiskyUser.ReadWrite.All": {
+        "primitive": "CanWeakenControls",
+        "impact": "Can dismiss risky-user state in Identity Protection, clear risk to bypass risk-based CA.",
+        "tier": "high",
+    },
+    # Credential / account-takeover:
+    "User-PasswordProfile.ReadWrite.All": {
+        "primitive": "CanResetPassword",
+        "impact": "Can reset passwords and force password changes for users (subject to role limits), account takeover.",
+        "tier": "high",
+    },
+    "User.ManageIdentities.All": {
+        "primitive": "CanManageUserIdentities",
+        "impact": "Can add/change a user's identities (alternate sign-in identifiers), a stealthy account-takeover primitive.",
+        "tier": "high",
+    },
+    # Intune device management (fleet-wide code execution), matches the existing Intune entries:
+    "DeviceManagementManagedDevices.ReadWrite.All": {
+        "primitive": "CanManageDevices",
+        "impact": "Can manage enrolled devices (wipe, remote actions, configuration) across the fleet.",
+        "tier": "high",
+    },
+    "DeviceManagementManagedDevices.PrivilegedOperations.All": {
+        "primitive": "CanManageDevices",
+        "impact": "Can run privileged device operations (wipe/retire/remote actions) on managed devices.",
+        "tier": "high",
+    },
+    "DeviceManagementRBAC.ReadWrite.All": {
+        "primitive": "CanManageDevices",
+        "impact": "Can write Intune RBAC, grant itself or others device-management privilege.",
+        "tier": "high",
+    },
+    "DeviceManagementServiceConfig.ReadWrite.All": {
+        "primitive": "CanManageDevices",
+        "impact": "Can change Intune service configuration (enrollment, compliance) tenant-wide.",
+        "tier": "high",
+    },
+    # Token forgery / B2C and resource PIM:
+    "TrustFrameworkKeySet.ReadWrite.All": {
+        "primitive": "CanForgeTokens",
+        "impact": "Can read/write Azure AD B2C policy key sets (signing keys), forge tokens for B2C users.",
+        "tier": "high",
+    },
+    "PrivilegedAccess.ReadWrite.AzureResources": {
+        "primitive": "CanManageResourcePIM",
+        "impact": "Can manage PIM for Azure resources, activate/assign privileged Azure resource roles.",
+        "tier": "high",
+    },
+    "Application.ReadWrite.OwnedBy": {
+        "primitive": "CanManageOwnedApps",
+        "impact": "Can add credentials to applications it owns and authenticate as them, scoped credential injection.",
+        "tier": "high",
+    },
+    # Bulk data / content exposure:
+    "BitLockerKey.Read.All": {
+        "primitive": "CanReadBitLockerKeys",
+        "impact": "Can read BitLocker recovery keys for all devices, offline disk decryption.",
+        "tier": "high",
+    },
+    "eDiscovery.ReadWrite.All": {
+        "primitive": "CanAccessEDiscovery",
+        "impact": "Can create eDiscovery cases/searches, read content across every mailbox and site.",
+        "tier": "high",
+    },
+    # Mail / file / site data exfiltration (flagged by AZ-APP-014; see _EXFIL there):
+    "Mail.Read": {
+        "primitive": "CanExfiltrateMail",
+        "impact": "Can read all users' mail (application permission), mass mailbox exfiltration.",
+        "tier": "high",
+    },
+    "Mail.ReadWrite": {
+        "primitive": "CanExfiltrateMail",
+        "impact": "Can read, write and delete all users' mail, exfiltration and message tampering.",
+        "tier": "high",
+    },
+    "MailboxSettings.ReadWrite": {
+        "primitive": "CanExfiltrateMail",
+        "impact": "Can set mailbox rules (auto-forwarding) for any user, silent mail exfiltration / BEC.",
+        "tier": "high",
+    },
+    "Files.Read.All": {
+        "primitive": "CanExfiltrateFiles",
+        "impact": "Can read all OneDrive files for every user, bulk file exfiltration.",
+        "tier": "high",
+    },
+    "Sites.Read.All": {
+        "primitive": "CanExfiltrateSites",
+        "impact": "Can read all SharePoint site content across the tenant.",
+        "tier": "high",
+    },
+    "Sites.Manage.All": {
+        "primitive": "CanExfiltrateSites",
+        "impact": "Can manage all SharePoint sites (lists, items), write/exfiltrate site content.",
+        "tier": "high",
+    },
+    "Chat.Read.All": {
+        "primitive": "CanReadTeams",
+        "impact": "Can read all Teams chat messages, intercept private conversations.",
+        "tier": "high",
     },
 }
 
@@ -280,7 +444,7 @@ KV_SENSITIVE_SECRET_PERMS = {"get", "list", "all"}
 
 # Delegated MS Graph scopes that, when admin-consented tenant-wide, let the client
 # service principal act with directory-write / role-management power on behalf of a
-# signed-in admin - the illicit-consent-grant escalation surface.
+# signed-in admin, the illicit-consent-grant escalation surface.
 DANGEROUS_DELEGATED_SCOPES = {
     "directory.readwrite.all", "rolemanagement.readwrite.directory",
     "application.readwrite.all", "approleassignment.readwrite.all",
@@ -289,7 +453,7 @@ DANGEROUS_DELEGATED_SCOPES = {
 }
 
 # High-impact BULK-DATA delegated scopes: consent to these lets an app read (or write)
-# every user's mailbox, files, SharePoint sites or Teams chat across the tenant - the
+# every user's mailbox, files, SharePoint sites or Teams chat across the tenant, the
 # mass-data-exposure / exfiltration surface, distinct from the directory-escalation
 # scopes above. Deliberately EXCLUDES the ubiquitous low-risk integrations
 # (calendars.*, contacts.read, mail.send, people.read.all, onlinemeetings.*) so the
@@ -304,7 +468,7 @@ BULK_DATA_DELEGATED_SCOPES = {
 # Lower-risk (but still tenant-wide) delegated scopes: reading/writing everyone's
 # calendars or contacts, sending mail as any user, reading org meetings/presence.
 # These are the ubiquitous productivity integrations (calendar sync, scheduling,
-# mailers) - real governance surface but far lower impact than reading all mail or
+# mailers), real governance surface but far lower impact than reading all mail or
 # files, so they are flagged separately at Low, and only when the app does NOT also
 # hold a higher-tier scope (which would already flag it under AZ-APP-023/025).
 LOWER_DATA_DELEGATED_SCOPES = {
@@ -312,6 +476,30 @@ LOWER_DATA_DELEGATED_SCOPES = {
     "contacts.read", "contacts.readwrite",
     "mail.send", "people.read.all",
     "onlinemeetings.read.all", "onlinemeetings.readwrite.all",
+}
+
+# Dangerous permissions on NON-Microsoft-Graph first-party APIs. The Graph-permission
+# rules (AZ-APP-001/002/009/014/032) only inspect Microsoft Graph app roles, so these
+# cross-API grants, the last of the security watchlist, were previously uncovered.
+# Keyed by the resource API's well-known appId (stable across tenants).
+#
+# `full_access_as_app` (an APPLICATION permission) grants an app FULL, app-only access to
+# EVERY mailbox (Exchange Online) or EVERY site (SharePoint Online) in the tenant, one
+# of the highest-impact grants that exists, so it is rated Critical (AZ-APP-033).
+FULL_ACCESS_AS_APP_APIS: dict[str, str] = {
+    "00000002-0000-0ff1-ce00-000000000000": "Office 365 Exchange Online",
+    "00000003-0000-0ff1-ce00-000000000000": "SharePoint Online",
+}
+
+# `user_impersonation` (a DELEGATED scope) lets the app act as the signed-in user against
+# the resource API. Harmless on most APIs, but on Azure's management-plane APIs it means
+# the app can drive Azure Resource Manager (full control of every resource the user can
+# reach) or Key Vault data-plane as that user, High when admin-consented tenant-wide
+# (AZ-APP-034). Only these management APIs are dangerous; flagging every user_impersonation
+# grant would be pure noise (it is the default delegated scope of countless integrations).
+USER_IMPERSONATION_MGMT_APIS: dict[str, str] = {
+    "797f4846-ba00-4fd7-ba43-dac1f8f63013": "Azure Service Management (ARM control plane)",
+    "cfa8b339-82a2-471a-a3c9-0fc0be7a4093": "Azure Key Vault (data plane)",
 }
 
 # Azure RBAC roles that grant code execution on a resource (and therefore theft
@@ -373,7 +561,7 @@ CONTAINER_PUSH_ROLES = {
     "owner",
 }
 
-# RBAC roles that can retrieve storage account keys (listKeys) - full data access
+# RBAC roles that can retrieve storage account keys (listKeys), full data access
 # and a common lateral-movement primitive.
 STORAGE_KEY_ROLES = {
     "storage account contributor", "storage account key operator service role",
@@ -435,12 +623,12 @@ GRAPH_APP_ROLE_IDS: dict[str, str] = {
     "50483e42-d915-4231-9639-7fdb7fd190e5": "UserAuthenticationMethod.ReadWrite.All",
     "292d869f-3427-49a8-9dab-8c70152b74e9": "Synchronization.ReadWrite.All",
     "32531b60-01da-4460-9f59-351ea7b4f4b1": "PrivilegedAccess.ReadWrite.AzureADGroup",
-    # EntitlementManagement - can provision privileged group memberships
+    # EntitlementManagement, can provision privileged group memberships
     "9acd699f-1e81-4958-b001-93b1d2506e4e": "EntitlementManagement.ReadWrite.All",
-    # AuditLog + Reports - read authentication/sign-in logs (reconnaissance)
+    # AuditLog + Reports, read authentication/sign-in logs (reconnaissance)
     "b0afded3-3588-46d8-8b3d-9842eff778da": "AuditLog.Read.All",
     "230c1aed-a721-4c5d-9cb4-a90514e508ef": "Reports.Read.All",
-    # Domain config write - can federate the tenant to an external IdP (AADConnect takeover)
+    # Domain config write, can federate the tenant to an external IdP (AADConnect takeover)
     "7e05723c-0bb0-42da-be95-ae9f08a6e53c": "Domain.ReadWrite.All",
     # Data-exfiltration application permissions
     "e2a3a72e-5f79-4c64-b1b1-878b674786c9": "Mail.ReadWrite.All",
@@ -477,7 +665,7 @@ def is_at_broad_scope(scope: str | None) -> bool:
     # Management group: any /providers/Microsoft.Management/managementGroups/<name>
     if s.startswith("/providers/microsoft.management/managementgroups"):
         return True
-    # Subscription-exact: /subscriptions/<guid> - exactly two slash segments
+    # Subscription-exact: /subscriptions/<guid>, exactly two slash segments
     if s.startswith("/subscriptions/") and s.count("/") == 2:
         return True
     return False

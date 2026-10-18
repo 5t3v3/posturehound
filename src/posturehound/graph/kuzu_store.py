@@ -18,7 +18,7 @@ from pathlib import Path
 from .persist import snapshot_dir
 from .schema import GraphSnapshot
 
-# Cypher verbs that mutate schema or data - rejected for the ad-hoc query box.
+# Cypher verbs that mutate schema or data, rejected for the ad-hoc query box.
 _FORBIDDEN_VERBS = (
     "create", "merge", "delete", "set", "remove", "drop", "alter",
     "copy", "detach", "load", "install", "attach",

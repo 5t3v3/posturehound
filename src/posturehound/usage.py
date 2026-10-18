@@ -3,12 +3,12 @@
 Every AI response's `usage` is recorded into a process-global, thread-safe meter that the
 scan pipeline brackets (reset at scan start, snapshot before save). Token counts are EXACT
 (reported by the API); the dollar figure is those counts times the editable rate table
-below. Confirm the rates against current Anthropic pricing - only the cost is an estimate,
+below. Confirm the rates against current Anthropic pricing, only the cost is an estimate,
 the token counts are real.
 
 Concurrency note: the meter assumes one active scan at a time (scans run as background
 jobs, normally sequential). Two truly-concurrent scans would share the meter; the recorded
-totals would then combine - acceptable for a single-operator tool.
+totals would then combine, acceptable for a single-operator tool.
 """
 from __future__ import annotations
 
@@ -37,9 +37,19 @@ class _Meter:
         self._lock = threading.Lock()
         self._on = False
         self._calls: list[dict] = []
+        # The meter is a process-global singleton because a scan's ~17 specialists record from
+        # parallel worker threads and must aggregate into ONE total. That means two scans running
+        # at once share it: the second's reset() clears the first's in-flight calls. We cannot
+        # isolate without breaking the parallel-worker aggregation, so instead we DETECT the overlap
+        # and flag the usage as approximate, rather than silently reporting a commingled number.
+        self._active = 0
+        self._contended = False
 
     def reset(self) -> None:
         with self._lock:
+            if self._active > 0:
+                self._contended = True   # a second scan bracket opened while one was still active
+            self._active += 1
             self._on = True
             self._calls = []
 
@@ -64,11 +74,19 @@ class _Meter:
             self._calls.append(row)
 
     def snapshot(self) -> dict:
-        """Summarise and stop recording (called once per scan, before save)."""
+        """Summarise and stop recording (called once per scan, before save). When another scan ran
+        concurrently, the token totals are commingled, so mark them approximate rather than wrong."""
         with self._lock:
             calls = list(self._calls)
-            self._on = False
-        return summarize(calls)
+            self._active = max(0, self._active - 1)
+            contended = self._contended
+            if self._active == 0:
+                self._on = False
+                self._contended = False
+        out = summarize(calls)
+        if contended:
+            out["contended"] = True   # concurrent scans shared the meter; totals are approximate
+        return out
 
 
 meter = _Meter()

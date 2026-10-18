@@ -64,6 +64,11 @@ tr:hover td{background:var(--raised)}
 button,.btn{background:var(--accent);border:0;color:#1a0f06;font-weight:700;padding:11px 18px;border-radius:10px;cursor:pointer;font-size:13.5px;font-family:var(--sans)}
 button:hover{filter:brightness(1.07)}button:disabled{opacity:.5;cursor:default}
 .ghost{background:transparent;border:1px solid var(--border2);color:var(--tx2)}
+.rsm{padding:5px 11px;font-size:11.5px}
+.settabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px;border-bottom:1px solid var(--border);padding-bottom:0}
+.settab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--tx2);font-weight:600;font-size:13px;padding:8px 14px;border-radius:0;cursor:pointer}
+.settab:hover{color:var(--tx)}
+.settab.on{color:var(--tx);border-bottom-color:var(--accent)}
 .danger{background:transparent;border:1px solid rgba(242,92,112,.4);color:var(--crit);padding:6px 12px;font-size:12.5px}
 .rowacts{display:inline-flex;align-items:center;gap:2px;justify-content:flex-end}
 .rowacts .sep{width:1px;height:16px;background:var(--border2);margin:0 5px;flex-shrink:0}
@@ -73,13 +78,48 @@ a.rowlink:hover{color:var(--tx);background:var(--raised)}
 .rowdel:hover{background:rgba(242,92,112,.14);color:var(--crit);filter:none}
 .tablewrap{overflow-x:auto}
 input[type=file]{color:var(--tx2);width:100%}
-input[type=password],input[type=text],input[type=number],select{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:9px;
-padding:10px 12px;color:var(--tx);font-family:var(--mono);font-size:13px}
+input:not([type]),input[type=password],input[type=text],input[type=number],input[type=search],input[type=email],select{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:9px;
+padding:10px 12px;color:var(--tx);font-family:var(--mono);font-size:13px;box-sizing:border-box}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(217,138,75,.12)}
+input::placeholder{color:var(--tx3)}
+/* Native <select> otherwise shows the OS chrome (often light); style it to the dark theme with a custom arrow. */
+select{-webkit-appearance:none;appearance:none;padding-right:32px;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239BA5BC' stroke-width='2.5'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat;background-position:right 11px center}
+select option{background:var(--surface);color:var(--tx)}
+/* Browser autofill forces a light background that breaks the dark theme; pin it back. */
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{
+  -webkit-text-fill-color:var(--tx);caret-color:var(--tx);
+  -webkit-box-shadow:0 0 0 1000px var(--bg) inset;transition:background-color 99999s ease-in-out 0s}
 label.fld{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}
 .hint{color:var(--tx3);font-size:12px;margin-top:6px;line-height:1.5}
 .drop{border:1.5px dashed var(--border2);border-radius:12px;padding:24px;text-align:center;background:var(--raised)}
 .row{display:flex;align-items:center;gap:10px}
 .chk{width:16px;height:16px;accent-color:var(--accent)}
+/* Users & Roles screen */
+.uform{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+.uform input,.uform select{width:auto}
+.uform input.in{min-width:200px;flex:0 1 220px}
+.uform select{min-width:160px}
+.utable{width:100%;border-collapse:collapse}
+.utable th{text-align:left;color:var(--tx3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:0 10px 8px}
+.utable td{padding:10px;border-top:1px solid var(--border);vertical-align:middle}
+.utable td.un{font-family:var(--mono);color:var(--tx);font-size:13px}
+.utable select.urole{width:100%;max-width:220px}
+.uperms{display:flex;flex-wrap:wrap;gap:5px}
+.permgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:9px 16px;margin:12px 0}
+.permgrid label{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx2);cursor:pointer}
+.permgrid input{width:15px;height:15px;accent-color:var(--accent)}
+.subhead{font-size:15px;font-weight:700;margin-bottom:4px}
+.gflist{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+.gfitem{border-left:2.5px solid var(--border);background:var(--bg);border-radius:0 8px 8px 0;padding:8px 11px}
+.gfhead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;line-height:1.4}
+.gfsev{font-family:var(--mono);font-weight:700;font-size:10px;min-width:50px}
+.gfrid{font-family:var(--mono);font-size:10.5px;color:var(--tx3)}
+.gftitle{font-size:12.5px;color:var(--tx)}
+.gfev{margin-top:3px;font-size:11px;color:var(--tx2);font-family:var(--mono);line-height:1.5;word-break:break-word}
+.formsec{margin-top:18px;border-top:1px solid var(--border);padding-top:16px}
+.formsec .k{font-size:13px;font-weight:600;color:var(--tx);margin-bottom:2px}
 .muted{color:var(--tx3)}.small{font-size:12px}
 .banner{border:1px solid var(--high);background:rgba(255,145,76,.08);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
@@ -164,6 +204,8 @@ border-radius:10px;padding:11px 18px;font-size:13px;opacity:0;transition:opacity
 .chain-tech{font-size:9.5px;color:var(--tx3);margin-top:3px;text-align:center;word-break:break-word;max-width:120px;line-height:1.3}
 .cat-pill{font-size:10px;font-weight:600;color:var(--tx3);background:var(--raised);border:1px solid var(--border);border-radius:999px;padding:1px 8px}
 .mitre-pill{font-size:10px;font-weight:600;color:#7a89c2;background:rgba(122,137,194,.12);border:1px solid rgba(122,137,194,.25);border-radius:999px;padding:1px 8px;font-family:var(--mono)}
+.adobadge{font-size:10px;font-weight:700;color:#4da3ff;background:rgba(0,120,212,.16);border:1px solid rgba(0,120,212,.5);border-radius:999px;padding:1px 8px;text-decoration:none;white-space:nowrap}
+.adobadge:hover{background:rgba(0,120,212,.28)}
 .srctag.chain{background:rgba(242,92,112,.14);color:var(--crit)}
 .sev-filter{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto}
 .sfbtn{background:var(--raised);border:1px solid var(--border);border-radius:8px;color:var(--tx2);font-size:11.5px;padding:4px 10px;cursor:pointer;font-weight:600}
@@ -256,6 +298,22 @@ body.embed main>h1,body.embed main>.sub{display:none}
 #gstage:fullscreen .gside{max-height:calc(100vh - 150px)}
 @media(max-width:1280px){.gwrap{grid-template-columns:270px 1fr}#gdetail{grid-column:1/-1;max-height:340px}}
 @media(max-width:900px){.gwrap{grid-template-columns:1fr}#cy{height:460px}.gside,#gdetail{max-height:none}}
+/* Compliance (CIS) view */
+.cgrid{display:flex;flex-wrap:wrap;gap:14px;margin:4px 0 22px}
+.ccard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;min-width:170px}
+.ccard .cnum{font-size:30px;font-weight:700;font-family:var(--mono,monospace);line-height:1.1}
+.ccard .clbl{font-size:12px;color:var(--tx2);margin-top:4px;line-height:1.4}
+.ccard .crow{font-size:13px;margin-bottom:2px}
+.csec{margin:0 0 14px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.csechead{background:var(--raised);padding:9px 14px;font-size:13.5px;border-bottom:1px solid var(--border)}
+.crowitem{display:grid;grid-template-columns:52px 1fr auto auto;gap:12px;align-items:center;padding:8px 14px;border-top:1px solid var(--border);font-size:13px}
+.crowitem:first-of-type{border-top:none}
+.cid{font-family:var(--mono,monospace);color:var(--tx3);font-size:12px}
+.ctitle{min-width:0}
+.crules{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:260px}
+.rchip{font-family:var(--mono,monospace);font-size:10.5px;color:var(--tx2);background:var(--raised);border:1px solid var(--border);border-radius:5px;padding:1px 6px}
+.cbadge{font-size:11px;font-weight:600;border:1px solid;border-radius:999px;padding:2px 10px;white-space:nowrap}
+@media(max-width:720px){.crowitem{grid-template-columns:44px 1fr;gap:6px}.crules{justify-content:flex-start;max-width:none;grid-column:1/-1}.cbadge{grid-column:1/-1;justify-self:start}}
 </style></head><body>
 <header><span class="mark"><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" width="30" height="30" aria-hidden="true"><defs><linearGradient id="phbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#F09432"/><stop offset="100%" stop-color="#C05C08"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#phbg)"/><ellipse cx="9" cy="21" rx="4" ry="10" fill="#0b0d14"/><ellipse cx="23" cy="21" rx="4" ry="10" fill="#0b0d14"/><circle cx="16" cy="13" r="9.5" fill="#0b0d14"/><circle cx="12" cy="12" r="2.4" fill="#F09432"/><circle cx="20" cy="12" r="2.4" fill="#F09432"/><circle cx="12" cy="12" r="0.9" fill="#0b0d14"/><circle cx="20" cy="12" r="0.9" fill="#0b0d14"/><ellipse cx="16" cy="19.5" rx="3" ry="2.2" fill="#5a2a04"/></svg></span><div><div class="bn">PostureHound</div><div class="bs">Azure identity posture</div></div>
 <nav>
@@ -264,7 +322,9 @@ body.embed main>h1,body.embed main>.sub{display:none}
  <a href="#/history" data-r="history">History</a>
  <a href="#/graph" data-r="graph">Attack Graph</a>
  <a href="#/rules" data-r="rules">Rules</a>
+ <a href="#/compliance" data-r="compliance">Compliance</a>
  <a href="#/traces" data-r="traces">AI Traces</a>
+ <a href="#/users" data-r="users">Users &amp; Roles</a>
  <a href="#/settings" data-r="settings">Settings</a>
 </nav>
 <span class="keypill" id="keypill">AI key: not set</span>
@@ -293,7 +353,7 @@ function _showLogin(msg){
   const app=$('#app'); if(!app)return;
   app.innerHTML=`<div class="loginwrap"><form id="loginform" class="card loginbox">
     <h1 style="margin:0 0 2px;font-size:20px">Sign in</h1>
-    <p class="sub" style="margin:0 0 18px">PostureHound - Azure identity posture</p>
+    <p class="sub" style="margin:0 0 18px">PostureHound, Azure identity posture</p>
     <label class="fl">Username<input id="lu" autocomplete="username" required></label>
     <label class="fl">Password<input id="lp" type="password" autocomplete="current-password" required></label>
     <div class="loginerr" id="lerr">${esc(msg||'')}</div>
@@ -311,14 +371,34 @@ function _showLogin(msg){
 }
 async function _logout(){try{await fetch('/api/auth/logout',{method:'POST'});}catch(e){}location.reload();}
 // Boot: decide login vs app based on the session, then run the router.
+// Current user's RBAC context. ME.permissions drives which nav items and routes are available.
+let ME={permissions:[],role:'',username:''};
+let PERMS=new Set();
+// Which permission each screen/route requires (sub-routes map to their parent feature).
+const ROUTE_PERM={dashboard:'dashboard',scan:'scan',history:'history',graph:'graph',rules:'rules',
+  compliance:'compliance',traces:'traces',trace:'traces',job:'scan',users:'users',settings:'settings'};
+function can(p){return PERMS.has(p);}
 async function _boot(){
-  let me={authenticated:true,must_change:false};
+  let me={authenticated:true,must_change:false,permissions:[]};
   try{me=await api('/api/auth/me');}catch(e){return;}   // 401 path already showed login
   if(me&&me.authenticated===false){_showLogin();return;}
+  ME=me; PERMS=new Set(me.permissions||[]);
   document.body.classList.remove('locked');
+  // Hide nav items this role cannot access.
+  document.querySelectorAll('nav a[data-r]').forEach(a=>{
+    const need=ROUTE_PERM[a.dataset.r];
+    a.style.display=(!need||PERMS.has(need))?'':'none';
+  });
   const bn=$('#pwbanner'); if(bn)bn.hidden=!me.must_change;
   const lo=$('#btnLogout'); if(lo)lo.onclick=_logout;
-  refreshKeyPill();router();
+  // Land on a screen the user can actually see.
+  const base0=(location.hash.replace('#/','')||'dashboard').split('/')[0];
+  if(ROUTE_PERM[base0] && !PERMS.has(ROUTE_PERM[base0])){
+    const first=['dashboard','findings','history','compliance','graph','rules','traces','scan','users','settings']
+      .find(r=>PERMS.has(ROUTE_PERM[r]||r));
+    if(first) location.hash='#/'+first;
+  }
+  await refreshKeyPill();router();
 }
 function delBtn(b,onDone){
   if(!b._dconf){b._dconf=setTimeout(()=>{b._dconf=null;b.textContent='Delete';},3000);b.textContent='Sure?';return;}
@@ -329,9 +409,9 @@ function delBtn(b,onDone){
     .catch(e=>{toast('Delete failed: '+e.message);b.disabled=false;b.textContent='Delete';});
 }
 function setNav(route){document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.dataset.r===route));}
-async function refreshKeyPill(){try{const s=await api('/api/settings');const p=$('#keypill');const src=s.api_key_source;p.textContent='AI key: '+(src==='env'?'from .env':src==='settings'?'set':'not set');p.classList.toggle('on',s.api_key_set);}catch(e){}}
+async function refreshKeyPill(){try{const s=await api('/api/settings');if(typeof s.ai_lead_confidence==='number')AI_LEAD_CONF=s.ai_lead_confidence;const p=$('#keypill');const src=s.api_key_source;p.textContent='AI key: '+(src==='env'?'from .env':src==='settings'?'set':'not set');p.classList.toggle('on',s.api_key_set);}catch(e){}}
 
-function fmtDate(ts){if(!ts)return '\u2014';const d=new Date(ts*1000);return d.toLocaleString();}
+function fmtDate(ts){if(!ts)return '-';const d=new Date(ts*1000);return d.toLocaleString();}
 
 // ---- Dashboard ----------------------------------------------------------
 async function viewDashboard(){
@@ -339,14 +419,14 @@ async function viewDashboard(){
  let scans=[];try{scans=await api('/api/scans');}catch(e){}
  if(!scans.length){$('#db').innerHTML='<div class="card empty">No scans yet. <a href="#/scan">Run your first scan \u2192</a></div>';return;}
  const latest=scans[0];const p=latest.score||0;
- const tiles=[['Latest grade',latest.grade||'\u2014'],['Critical',latest.critical],['High',latest.high],
+ const tiles=[['Latest grade',latest.grade||'-'],['Critical',latest.critical],['High',latest.high],
    ['Findings',latest.findings],['Remediated',`${latest.resolved||0}/${latest.findings} (${latest.remediation_pct||0}%)`],['Scans stored',scans.length]];
  $('#db').innerHTML=`
   <div class="card hero">
     <div class="ring" style="--p:${p}"><div class="inner"><div class="g">${esc(latest.grade||'?')}</div><div class="s">${p}/100</div></div></div>
     <div><div class="pt"><b>Latest scan</b> \u00B7 ${esc((latest.files||[]).join(', ')||'collection')}</div>
     <div class="pt muted small">${fmtDate(latest.created_at)}</div>
-    ${latest.complete?'':'<div class="banner" style="margin-top:10px">Collection may be incomplete \u2014 open the report\u2019s Coverage tab.</div>'}
+    ${latest.complete?'':'<div class="banner" style="margin-top:10px">Collection may be incomplete, open the report\u2019s Coverage tab.</div>'}
     <div style="margin-top:12px"><a class="btn" href="/api/scans/${latest.id}/report" target="_blank">Open full report \u2197</a> <a class="btn ghost" href="/api/scans/${latest.id}/report#roadmap" target="_blank">Action plan \u2197</a></div></div>
   </div>
   <div class="tiles">${tiles.map(t=>`<div class="tile"><div class="n">${esc(t[1])}</div><div class="l">${esc(t[0])}</div></div>`).join('')}</div>
@@ -364,7 +444,7 @@ function trendSVG(scans){
  const xs=(i)=>pad+(i/(pts.length-1))*(W-pad*2);
  const ys=(v)=>H-pad-(v/100)*(H-pad*2);
  const path=pts.map((p,i)=>`${i===0?'M':'L'}${xs(i).toFixed(1)},${ys(p.score||0).toFixed(1)}`).join(' ');
- const dots=pts.map((p,i)=>`<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.score||0).toFixed(1)}" r="3.5" fill="var(--accent)"><title>${esc(fmtDate(p.created_at))} \u2014 ${esc(p.grade)} (${p.score})</title></circle>`).join('');
+ const dots=pts.map((p,i)=>`<circle cx="${xs(i).toFixed(1)}" cy="${ys(p.score||0).toFixed(1)}" r="3.5" fill="var(--accent)"><title>${esc(fmtDate(p.created_at))}, ${esc(p.grade)} (${p.score})</title></circle>`).join('');
  const first=pts[0].score||0, last=pts[pts.length-1].score||0, delta=last-first;
  const deltaCol=delta>0?'var(--ok)':delta<0?'var(--crit)':'var(--tx3)';
  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:100%" xmlns="http://www.w3.org/2000/svg">
@@ -395,7 +475,7 @@ async function renderEvalPanel(scanId){
      <span class="steplabel">${esc(full.ai_haiku_model||'Sonnet')} <span class="stepsub">Phase 4 skeptic</span></span>
      <span class="stepcount">${full.ai_generated_count||0} final</span>
    </div>
-   <div class="small muted" style="margin-top:6px">${full.ai_rejected_count?`${full.ai_rejected_count} candidate(s) rejected \u2014 referenced something not present in this tenant's data. `:''}${full.deterministic_finding_count||0} deterministic safety-net findings included alongside the AI review.</div>`;
+   <div class="small muted" style="margin-top:6px">${full.ai_rejected_count?`${full.ai_rejected_count} candidate(s) rejected, referenced something not present in this tenant's data. `:''}${full.deterministic_finding_count||0} deterministic safety-net findings included alongside the AI review.</div>`;
  } else if(full.ai_error){
    pipeline=`<div class="banner warn" style="margin:0"><span class="small">${esc(full.ai_error)}</span></div>`;
  } else {
@@ -430,9 +510,96 @@ function renderFileList(){
  el.innerHTML=scanFiles.map((f,i)=>`<div class="fileitem"><span class="fn">${esc(f.name)}</span><span class="fs">${fmtSize(f.size)}</span><button class="rmfile" data-i="${i}" title="Remove">\u00D7</button></div>`).join('');
  qa('.rmfile',el).forEach(b=>b.onclick=()=>{scanFiles.splice(+b.dataset.i,1);renderFileList();});
 }
+// Group a heavily-flagged service principal (in MORE THAN 5 distinct deterministic findings)
+// into ONE consolidated card, and remove it from the individual findings so it no longer sits
+// under other SPs' findings. SPs in <=5 findings are left exactly as they are.
+// Merge the server-built SP group findings (full.sp_groups, each a first-class finding with a
+// synthesized summary / why / attack scenario) into the list, and strip the heavily-flagged SP
+// from the individual findings so it is reviewed once in its group card. Grouping is computed
+// ONCE on the server (report._consolidate_sp_groups); this only renders it.
+// Remove a heavy SP (one with its own group card) from an individual finding completely, not just
+// from its entity list: also strip it from the finding's evidence and recount/rewrite the summary,
+// so the SP is not duplicated between its group card and this finding's own text.
+function _stripHeavySP(f, heavySet){
+  const orig=f.entities||[];
+  const ne=orig.filter(e=>!(e&&heavySet.has(e.id)));
+  if(ne.length===orig.length) return f;
+  if(orig.length&&!ne.length) return null;
+  const removed=new Set(orig.filter(e=>e&&heavySet.has(e.id))
+                            .map(e=>String(e.name||e.id||'').toLowerCase()));
+  const g=Object.assign({},f,{entities:ne,affected_count:ne.length});
+  if(Array.isArray(f.evidence)){
+    g.evidence=f.evidence.filter(ev=>{
+      const m=String(ev).match(/^\s*(.*?)\s*[(:]/);
+      const nm=(m?m[1]:String(ev)).trim().toLowerCase();
+      return !removed.has(nm);
+    });
+  }
+  const names=ne.map(e=>e.name||e.id).filter(Boolean);
+  const shown=names.slice(0,4).join(', ')+(names.length>4?(' (+'+(names.length-4)+' more)'):'');
+  const kind=String((ne[0]&&ne[0].kind)||'').replace('AZ','')||'object';
+  const prefix=ne.length+' affected '+kind+(ne.length!==1?'s':'')+': '+shown+'.';
+  if(typeof f.summary==='string' && f.summary){
+    const tail=f.summary.replace(/^[^.]*\.\s*/,'');
+    g.summary = tail ? (prefix+' '+tail) : prefix;
+  }
+  // Re-point the scenario's "Concretely: ... compromises <SP> ... realises this." lead at a surviving
+  // entity, so it does not name a principal now shown only in its own group card.
+  if(typeof f.attack_scenario==='string' && f.attack_scenario && ne.length){
+    const base=f.attack_scenario.replace(/^Concretely: an attacker who compromises .*? realises this\.\s*/,'');
+    const top=ne[0], nm=(top&&(top.name||top.id))||'the affected principal';
+    const lead='Concretely: an attacker who compromises '+nm+' ('+kind+') realises this.';
+    g.attack_scenario = base ? (lead+' '+base) : lead;
+  }
+  return g;
+}
+function _consolidateSPs(list, groups){
+  groups=groups||[];
+  if(!groups.length) return list;
+  const heavySet=new Set(groups.map(g=>g.sp_id).filter(Boolean));
+  const kept=[];
+  list.forEach(f=>{
+    if(f.rule_id&&Array.isArray(f.entities)){
+      const g=_stripHeavySP(f,heavySet);
+      if(g===null) return;                          // only heavy SPs -> now in their group card
+      f=g;
+    }
+    kept.push(f);
+  });
+  return groups.concat(kept);
+}
+function _groupedIssuesBlock(issues){
+  const C={Critical:'var(--crit)',High:'var(--high)',Medium:'var(--med)',Low:'var(--low)',Info:'var(--tx3)'};
+  return '<div class="sfblock"><div class="sfblabel">⌁ Grouped findings ('+issues.length+')</div><div class="gflist">'
+    +issues.map(i=>{const col=C[i.severity]||'var(--tx3)';
+      return '<div class="gfitem" style="border-left-color:'+col+'">'
+        +'<div class="gfhead"><span class="gfsev" style="color:'+col+'">'+esc(i.severity)+'</span>'
+        +'<span class="gfrid">'+esc(i.rule_id||'')+'</span><span class="gftitle">'+esc(i.title||'')+'</span></div>'
+        +(i.evidence?'<div class="gfev">'+esc(i.evidence)+'</div>':'')
+        +'</div>';}).join('')
+    +'</div></div>';
+}
+// Accuracy gate: a low-confidence or 'lead'-tier AI finding is an UNCORROBORATED hypothesis, not a
+// verified fact. It is kept out of the main findings list and the posture counts, and shown under a
+// separate "Leads" section for manual review. Deterministic and corroborated AI findings are never
+// gated. Kept in lockstep with report.py's _isAILead.
+let AI_LEAD_CONF=50;   // kept in sync with the Settings control via _loadLeadConf()
+function _isAILead(f){
+  if(!f||f.best_practice||f.source==='sp_group') return false;
+  if(f.source!=='ai_generated'&&f.source!=='ai_chain') return false;
+  if(f.quality_tier==='verified_fact'||f.quality_tier==='corroborated') return false;
+  if(f.quality_tier==='lead') return true;
+  const c=(typeof f.effective_confidence==='number')?f.effective_confidence
+          :(typeof f.confidence==='number'?f.confidence:null);
+  return c!=null&&c<AI_LEAD_CONF;
+}
 function renderScanResults(full,scanId){
  const sc=full.score||{};
- const active=(full.findings||[]).filter(f=>!f.best_practice);
+ let active=(full.findings||[]).filter(f=>!f.best_practice);
+ active=_consolidateSPs(active, full.sp_groups||[]);
+ // Split the gated AI leads out of the main list.
+ const leads=active.filter(_isAILead);
+ active=active.filter(f=>!_isAILead(f));
  const bpN=(full.findings||[]).filter(f=>f.best_practice).length;
  // Order: severity first, then blast radius (a chokepoint covering 234 principals outranks a
  // 2-path individual at the same severity), then confidence, so the most consequential and
@@ -440,9 +607,9 @@ function renderScanResults(full,scanId){
  {const _sr={Critical:0,High:1,Medium:2,Low:3,Info:4};
   const _impact=f=>(f.member_count||f.path_count||(f.entities?f.entities.length:0)||0);
   active.sort((a,b)=>(_sr[a.severity]??5)-(_sr[b.severity]??5) || _impact(b)-_impact(a) || ((b.confidence??0)-(a.confidence??0)));}
- // Recompute from findings directly - stored severity_counts may predate the
+ // Recompute from findings directly, stored severity_counts may predate the
  // path_consolidation exclusion fix (those findings render in the Attack Paths tab).
- const sev=(()=>{const c={Critical:0,High:0,Medium:0,Low:0,Info:0};for(const f of (full.findings||[])){if(f.source==='path_consolidation')continue;if(c[f.severity]!==undefined)c[f.severity]++;}return c;})();
+ const sev=(()=>{const c={Critical:0,High:0,Medium:0,Low:0,Info:0};for(const f of (full.findings||[])){if(f.source==='path_consolidation')continue;if(_isAILead(f))continue;if(c[f.severity]!==undefined)c[f.severity]++;}return c;})();
  const gradeCol=sc.score<40?'var(--crit)':sc.score<75?'var(--med)':'var(--ok)';
  function sevCol(s){return {Critical:'var(--crit)',High:'var(--high)',Medium:'var(--med)',Low:'var(--low)',Info:'var(--tx3)'}[s]||'#888';}
  function confCol(c){if(c==null)return 'var(--tx3)';return c>=85?'var(--ok)':c>=60?'var(--med)':'var(--high)';}
@@ -467,7 +634,7 @@ function renderScanResults(full,scanId){
  }
  function renderChain(chain){
    if(!chain||!chain.length) return '';
-   return `<div class="sfblock"><div class="sfblabel">⛓ Attack path - ${chain.length} hop${chain.length!==1?'s':''}</div><div class="attack-chain">${_renderChainNodes(chain,'')}</div></div>`;
+   return `<div class="sfblock"><div class="sfblabel">⛓ Attack path, ${chain.length} hop${chain.length!==1?'s':''}</div><div class="attack-chain">${_renderChainNodes(chain,'')}</div></div>`;
  }
  // Deep-link to the attack graph plotting THIS finding's own path (entry -> its target), not a
  // generic path to Tier-0. Returns '' when the finding has no distinct target to trace to.
@@ -478,10 +645,10 @@ function renderScanResults(full,scanId){
    const e0=(f.entities||[])[0]&&(f.entities||[])[0].id;
    return e0?base+'/'+encodeURIComponent(e0):'';
  }
- const cards=active.map(f=>{
+ function mkCard(f){
    const col=sevCol(f.severity);
    const conf=f.confidence;
-   const src=f.source==='ai_chain'?{label:'⛓ Chain',cls:'chain'}:f.source==='ai_generated'?{label:'◆ AI',cls:'ai'}:{label:'⚙ Rule',cls:'det'};
+   const src=f.source==='sp_group'?{label:'⌱ SP report',cls:'chain'}:f.source==='ai_chain'?{label:'⛓ Chain',cls:'chain'}:f.source==='ai_generated'?{label:'◆ AI',cls:'ai'}:{label:'⚙ Rule',cls:'det'};
    const summary=f.summary||(f.what||'').slice(0,200);
    const ents=(f.entities||[]).slice(0,15).map(e=>{
      const ev=e.role_in_finding||(e.evidence&&typeof e.evidence==='object'?Object.entries(e.evidence).slice(0,2).map(([k,v])=>`${esc(k)}: ${esc(String(v))}`).join(' · '):'');
@@ -489,11 +656,17 @@ function renderScanResults(full,scanId){
    }).join('');
    const evList=(f.evidence||[]).map(e=>`<li>${esc(e)}</li>`).join('');
    const scenario=f.attack_scenario||(f.detail||{}).scenario||'';
-   const fix=f.remediation||((f.detail||{}).steps||[]).join(' ');
+   const impact=(f.detail||{}).impact||f.impact||'';
+   // Proactive review-first points (validate it is needed, then scope it down) when present.
+   const fixPts=(f.remediation_points&&f.remediation_points.length)?f.remediation_points
+                :((f.detail||{}).steps&&(f.detail||{}).steps.length?f.detail.steps:(f.remediation?[f.remediation]:[]));
    const detection=f.detection||'';
    const chainHtml=renderChain(f.escalation_chain);
    const mitrePill=f.mitre_technique?`<span class="mitre-pill">${esc(f.mitre_technique)}</span>`:'';
    const explLabel=f.exploitability?`<span class="cat-pill">⚡ ${esc(f.exploitability)}</span>`:'';
+   // Marker when an Azure DevOps work item already exists for this finding (created from PostureHound).
+   const wi=(full._workitems||{})[f._finding_key||''];
+   const adoBadge=wi?`<a href="${esc(wi.url||'#')}" target="_blank" rel="noopener" class="adobadge" title="Azure DevOps work item ${esc(String(wi.id||''))} created from PostureHound">◆ ADO #${esc(String(wi.id||''))}</a>`:'';
    return `<div class="sfinding" data-sev="${esc(f.severity)}">
     <div class="sfhead">
       <span style="width:3px;align-self:stretch;border-radius:2px;background:${col};flex:none;margin:-12px 4px -12px -14px"></span>
@@ -501,33 +674,37 @@ function renderScanResults(full,scanId){
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
           <span style="font-size:10.5px;font-weight:700;color:${col}">${esc(f.severity)}</span>
           <span class="srctag ${src.cls}">${src.label}</span>
-          ${f.category?`<span class="cat-pill">${esc(f.category)}</span>`:''}${mitrePill}${explLabel}
+          ${f.category?`<span class="cat-pill">${esc(f.category)}</span>`:''}${mitrePill}${explLabel}${adoBadge}
         </div>
         <b style="display:block;line-height:1.3">${esc(f.title)}</b>
         ${summary?`<div style="font-size:12px;color:var(--tx2);margin-top:3px;line-height:1.45">${esc(summary.slice(0,200))}${summary.length>200?'…':''}</div>`:''}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none;margin-left:10px">
         ${conf!=null?`<span style="font-size:11px;font-weight:700;color:${confCol(conf)};font-family:var(--mono)">${conf}%</span>`:''}
-        <span class="small muted">${(f.entities||[]).length} affected</span>
+        <span class="small muted">${f._grouped?f._grouped.length+' findings':((f.entities||[]).length+' affected')}</span>
       </div>
       <span class="schev">▶</span>
     </div>
     <div class="sfbody">
       <div style="color:var(--tx2);font-size:13px;line-height:1.65;margin-bottom:10px">${esc(f.what||f.why_it_matters||'')}</div>
+      ${f._grouped?_groupedIssuesBlock(f._grouped):''}
       ${chainHtml}
+      ${impact?`<div class="sfblock"><div class="sfblabel">Impact</div><div class="sfblockbody">${esc(impact)}</div></div>`:''}
       ${scenario?`<div class="sfblock"><div class="sfblabel">Attack scenario</div><div class="sfblockbody">${esc(scenario)}</div></div>`:''}
       ${detection?`<div class="sfblock"><div class="sfblabel">Detection signals</div><div class="sfblockbody">${esc(detection)}</div></div>`:''}
       ${ents?`<div class="sfblock"><div class="sfblabel">Affected entities</div>${ents}</div>`:''}
       ${evList?`<div class="sfblock"><div class="sfblabel">Evidence</div><ul style="margin:4px 0;padding-left:18px;color:var(--tx2);font-size:12.5px">${evList}</ul></div>`:''}
-      ${fix?`<div class="sfblock"><div class="sfblabel">How to fix</div><div class="sfblockbody">${esc(fix)}</div></div>`:''}
+      ${fixPts.length?`<div class="sfblock"><div class="sfblabel">How to fix</div><ol style="margin:4px 0;padding-left:18px;color:var(--tx2);font-size:12.5px;line-height:1.55">${fixPts.map(s=>`<li style="margin:4px 0">${esc(s)}</li>`).join('')}</ol></div>`:''}
       <div style="margin-top:12px;display:flex;gap:7px;flex-wrap:wrap">
         <a class="btn ghost" style="font-size:11.5px;padding:5px 11px" href="/api/scans/${scanId}/report#findings" target="_blank">Full detail in report ↗</a>
         ${_graphHref(scanId,f)?`<a class="btn ghost" style="font-size:11.5px;padding:5px 11px" href="${_graphHref(scanId,f)}">◆ View in attack graph</a>`:''}
       </div>
     </div>
    </div>`;
- }).join('');
- // Top chokepoints - the nodes that the most attack paths pass through or converge on;
+ }
+ const cards=active.map(mkCard).join('');
+ const leadCards=leads.map(mkCard).join('');
+ // Top chokepoints, the nodes that the most attack paths pass through or converge on;
  // fixing one severs the most paths. Sourced from the deterministic choke_points analysis.
  const chokeSrc=((full.analytics||{}).choke_points)||[];
  const chokeRows=chokeSrc.slice(0,6).map((c,i)=>{
@@ -539,10 +716,18 @@ function renderScanResults(full,scanId){
      <span style="margin-left:auto;color:var(--med);white-space:nowrap">${n} path${n!==1?'s':''}</span>
    </div>`;}).join('');
  const bhChokeBlock=chokeRows?`<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
-   <div class="small muted" style="margin-bottom:3px">Top chokepoints - fixing one severs the most attack paths:</div>
+   <div class="small muted" style="margin-bottom:3px">Top chokepoints, fixing one severs the most attack paths:</div>
    ${chokeRows}</div>`:'';
+ // Collection-completeness warnings (e.g. the ENTIRE Azure resource plane was not collected).
+ // These explain WHY whole finding families may be absent, so they get a prominent banner right
+ // under the score, never buried, so a coverage gap is not mistaken for a clean result.
+ const collWarns=((full.collection||{}).warnings||[]).filter(w=>w.level==='warning'||w.level==='critical');
+ const collBanner=collWarns.length?`<div class="banner" style="margin-top:16px">
+   <div style="font-weight:700;margin-bottom:5px">⚠ Collection coverage, some checks could not run</div>
+   ${collWarns.map(w=>`<div style="margin:4px 0;font-size:12.5px;line-height:1.5">${esc(w.message)}</div>`).join('')}
+ </div>`:'';
  const res=document.createElement('div');
- res.innerHTML=`<div class="card" style="margin-top:16px;display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+ res.innerHTML=`${collBanner}<div class="card" style="margin-top:16px;display:flex;gap:18px;align-items:center;flex-wrap:wrap">
   <div style="text-align:center;min-width:90px;padding-right:18px;border-right:1px solid var(--border)">
     <div style="font-size:50px;font-weight:800;line-height:1;color:${gradeCol}">${esc(sc.grade||'?')}</div>
     <div class="small muted">${sc.score||0}/100</div>
@@ -560,13 +745,21 @@ function renderScanResults(full,scanId){
  </div>
  <div style="margin:22px 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
    <div style="font-size:14px;font-weight:700">Findings</div>
-   <div class="small muted">${active.length} active${bpN?` · ${bpN} best-practice`:''}${active.length?` - click to expand`:''}</div>
+   <div class="small muted">${active.length} active${bpN?` · ${bpN} best-practice`:''}${active.length?`, click to expand`:''}</div>
    <div class="sev-filter" id="sfilt">
      <button class="sfbtn on" data-f="All">All <span>${active.length}</span></button>
      ${['Critical','High','Medium','Low','Info'].filter(s=>(sev[s]||0)>0).map(s=>`<button class="sfbtn" data-f="${s}">${s} <span>${sev[s]}</span></button>`).join('')}
    </div>
  </div>
  <div id="sfcards">${active.length?cards:'<div class="card empty">No active findings. Excellent posture.</div>'}</div>
+ ${leads.length?`<div style="margin:26px 0 10px">
+   <div id="leadtoggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+     <span class="leadchev" style="color:var(--tx3);font-size:11px;transition:transform .15s">▶</span>
+     <span style="font-size:13px;font-weight:700">◇ Lower-confidence AI leads</span>
+     <span class="small muted">${leads.length}, uncorroborated hypotheses, excluded from the posture counts above; review manually</span>
+   </div>
+   <div id="leadcards" style="display:none;margin-top:12px">${leadCards}</div>
+ </div>`:''}
  ${bpN?`<div class="small muted" style="margin-top:8px">${bpN} best-practice recommendation(s) in the full report.</div>`:''}`;
  $('#app').appendChild(res);
  res.querySelectorAll('[data-action="goto-history"]').forEach(btn=>{
@@ -577,16 +770,19 @@ function renderScanResults(full,scanId){
      res.querySelectorAll('.sfbtn').forEach(b=>b.classList.remove('on'));
      btn.classList.add('on');
      const f=btn.dataset.f;
-     res.querySelectorAll('.sfinding').forEach(el=>{el.style.display=(f==='All'||el.dataset.sev===f)?'':'none';});
+     // Scope the severity filter to the MAIN findings; the Leads section has its own toggle.
+     res.querySelectorAll('#sfcards .sfinding').forEach(el=>{el.style.display=(f==='All'||el.dataset.sev===f)?'':'none';});
    };
  });
+ const _lt=res.querySelector('#leadtoggle');
+ if(_lt) _lt.onclick=()=>{const box=res.querySelector('#leadcards');const chev=res.querySelector('.leadchev');const open=box.style.display==='none';box.style.display=open?'block':'none';if(chev)chev.style.transform=open?'rotate(90deg)':'';};
  res.querySelectorAll('.sfinding').forEach(c=>c.querySelector('.sfhead').onclick=()=>c.classList.toggle('sopen'));
 }
 async function viewScan(){
  const app=$('#app');let st={};try{st=await api('/api/settings');}catch(e){}
  let prevScans=[];try{prevScans=(await api('/api/scans')).filter(s=>s.has_collection);}catch(e){}
  scanFiles=[];
- app.innerHTML=`<h1>New scan</h1><p class="sub">Upload your AzureHound collection \u2014 a single file, several together (ad.json and rm.json), or a .zip.</p>
+ app.innerHTML=`<h1>New scan</h1><p class="sub">Upload your AzureHound collection, a single file, several together (ad.json and rm.json), or a .zip.</p>
  <div class="card">
    <div class="drop" id="dropzone">
      <div class="dropicon">\u2913</div>
@@ -595,9 +791,16 @@ async function viewScan(){
      <div class="hint">Files are analysed in memory and never written to disk. Select ad.json and rm.json together to merge both planes.</div>
    </div>
    <div id="filelist" class="filelist"></div>
-   ${!st.api_key_set?'<div class="hint" style="color:var(--high);margin-top:10px">No AI key configured \u2014 <a href="#/settings" style="color:var(--high)">set it in Settings</a> before running. AI analysis requires an Anthropic key.</div>':''}
-   <div class="hint" style="margin-top:10px;color:var(--tx3)">${st.arg_configured?'\u25c6 Or <b>collect the tenant live</b> from your read-only service principal \u2014 no upload needed. This reads the directory + Azure RBAC graph and assesses the whole tenant across all subscriptions.':'Tip: configure a read-only service principal in <a href="#/settings">Settings</a> to collect the tenant live, with no AzureHound upload.'}</div>
-   <div style="margin-top:18px"><button id="run">Evaluate posture</button> ${st.arg_configured?'<button id="runlive" class="ghost" style="border-color:rgba(196,111,255,.45);color:#c46fff">\u25c6 Collect live from SP</button>':''} <button id="stopscan" class="ghost" style="display:none;border-color:rgba(242,92,112,.4);color:var(--crit)">&#9632; Stop scan</button> <span id="status" class="small muted"></span></div>
+   ${!st.api_key_set?'<div class="hint" style="color:var(--tx2);margin-top:10px">No Anthropic key configured, so the <b>AI</b> options are disabled. The <b>deterministic (no AI)</b> scan runs without a key. <a href="#/settings">Add a key in Settings</a> to enable AI analysis.</div>':''}
+   <div class="hint" style="margin-top:10px;color:var(--tx3)">${st.arg_configured?'\u25c6 Or <b>collect the tenant live</b> from your read-only service principal, no upload needed. This reads the directory + Azure RBAC graph and assesses the whole tenant across all subscriptions.':'Tip: configure a read-only service principal in <a href="#/settings">Settings</a> to collect the tenant live, with no AzureHound upload.'}</div>
+   <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+     <button id="run" ${!st.api_key_set?'disabled title="Add an Anthropic key in Settings to run the AI analysis"':''}>Evaluate posture (AI)</button>
+     <button id="rundet" class="ghost">Deterministic scan (no AI)</button>
+     ${st.arg_configured?`<button id="runlive" class="ghost" style="border-color:rgba(196,111,255,.45);color:#c46fff" ${!st.api_key_set?'disabled title="Add an Anthropic key in Settings to run the AI analysis"':''}>\u25c6 Collect live (AI)</button><button id="runlivedet" class="ghost" style="border-color:rgba(196,111,255,.3);color:#c46fff">\u25c6 Collect live (no AI)</button>`:''}
+     <button id="stopscan" class="ghost" style="display:none;border-color:rgba(242,92,112,.4);color:var(--crit)">&#9632; Stop scan</button>
+     <span id="status" class="small muted"></span>
+   </div>
+   <div class="hint" style="margin-top:9px;color:var(--tx3)"><b>AI</b> adds the correlated attack-chain narrative and cross-finding analysis (needs an Anthropic key). <b>No AI</b> runs the deterministic rule engine only, no key, no AI cost, fully offline.</div>
    <div id="livelog" class="livelog" style="display:none">
      <div class="livelogtitle">Live analysis log</div>
      <div id="logbody" class="logbody"></div>
@@ -605,13 +808,13 @@ async function viewScan(){
  </div>
  ${prevScans.length?`<div class="card">
    <div class="k" style="margin-top:0">Re-run from a previous collection</div>
-   <p class="hint" style="margin:0 0 10px">Re-assess a tenant you already collected - no re-collection from Azure. Useful to try different Tier-0 selections or pick up engine changes.</p>
+   <p class="hint" style="margin:0 0 10px">Re-assess a tenant you already collected, no re-collection from Azure. Useful to try different Tier-0 selections or pick up engine changes.</p>
    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
      <select id="prevsel" class="hsort" style="flex:1;min-width:280px">${prevScans.map(s=>`<option value="${esc(s.id)}">${esc(fmtDate(s.created_at))} · ${esc(s.grade||'?')} (${s.score||0}) · ${esc((s.files||[]).join(', ')||s.id)}</option>`).join('')}</select>
      <button id="prevrescan">⚡ Re-scan (no AI)</button>
      <button id="prevrun" class="ghost">Use this collection${st.api_key_set?' (with AI, pick Tier-0)':''}</button>
    </div>
-   <div class="hint" style="margin:8px 0 0;color:var(--tx3)">⚡ <b>Re-scan (no AI)</b> re-runs the deterministic engine over the stored collection in one click - no Azure re-collection, no Tier-0 step, no AI cost. Use it to pick up rule/engine changes on data you already have.</div>
+   <div class="hint" style="margin:8px 0 0;color:var(--tx3)">⚡ <b>Re-scan (no AI)</b> re-runs the deterministic engine over the stored collection in one click, no Azure re-collection, no Tier-0 step, no AI cost. Use it to pick up rule/engine changes on data you already have.</div>
  </div>`:''}`;
  const dz=$('#dropzone');
  dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over');});
@@ -619,7 +822,11 @@ async function viewScan(){
  dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('over');
    for(const f of e.dataTransfer.files) scanFiles.push(f); renderFileList();});
  $('#files').onchange=e=>{for(const f of e.target.files) scanFiles.push(f); renderFileList(); e.target.value='';};
- const setRunDisabled=(v)=>{ ['#run','#runlive','#prevrun'].forEach(s=>{const b=$(s);if(b)b.disabled=v;}); };
+ const aiOk=!!st.api_key_set;   // AI buttons require an Anthropic key; no-AI buttons never do
+ const setRunDisabled=(v)=>{
+   ['#run','#rundet','#runlive','#runlivedet','#prevrun','#prevrescan'].forEach(s=>{const b=$(s);if(b)b.disabled=v;});
+   if(!v&&!aiOk){ ['#run','#runlive'].forEach(s=>{const b=$(s);if(b)b.disabled=true;}); }  // keep AI disabled with no key
+ };
  // Poll a background job, streaming its log into #logbody. Resolves with the finished
  // job status ({done, scan_id, error, meta}). Shared by collect and assess phases.
  async function _pollJob(startCall,label){
@@ -663,20 +870,24 @@ async function viewScan(){
      viewTier0Select(cid,useAi);
    }catch(e){ const s=$('#stopscan'); if(s)s.style.display='none'; $('#status').textContent='Error: '+e.message; setRunDisabled(false); }
  }
- $('#run').onclick=()=>{
-   if(!scanFiles.length){toast('Choose at least one file, or use "Collect live from SP".');return;}
+ // Upload-based scan. The AI and no-AI buttons differ ONLY in the use_ai flag carried through
+ // Tier-0 selection into assessment; everything else (collect, Tier-0, report) is identical.
+ const startUpload=(useAi)=>{
+   if(!scanFiles.length){toast('Choose at least one file, or collect live from the SP.');return;}
    const fd=new FormData();for(const f of scanFiles)fd.append('files',f);
-   driveCollect(()=>api('/api/collect/start',{method:'POST',body:fd}),true);
+   driveCollect(()=>api('/api/collect/start',{method:'POST',body:fd}),useAi);
  };
- if($('#runlive')) $('#runlive').onclick=()=>{
-   driveCollect(()=>api('/api/collect/start-live',{method:'POST',body:new FormData()}),true);
- };
+ $('#run').onclick=()=>startUpload(true);
+ if($('#rundet')) $('#rundet').onclick=()=>startUpload(false);
+ const startLive=(useAi)=>driveCollect(()=>api('/api/collect/start-live',{method:'POST',body:new FormData()}),useAi);
+ if($('#runlive')) $('#runlive').onclick=()=>startLive(true);
+ if($('#runlivedet')) $('#runlivedet').onclick=()=>startLive(false);
  if($('#prevrun')) $('#prevrun').onclick=()=>{
    const sid=$('#prevsel').value; if(!sid)return;
    const fd=new FormData();fd.append('scan_id',sid);
    driveCollect(()=>api('/api/collect/from-scan',{method:'POST',body:fd}),true);
  };
- // One-click deterministic re-scan of a stored collection - straight to assessment,
+ // One-click deterministic re-scan of a stored collection, straight to assessment,
  // no Tier-0 step, AI off. Reuses the same job-polling + report-render path.
  if($('#prevrescan')) $('#prevrescan').onclick=()=>{
    const sid=$('#prevsel').value; if(!sid)return;
@@ -688,8 +899,8 @@ async function viewScan(){
 // \u2500\u2500 Optional Tier-0 selection step (after collect, before assessment) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 async function viewTier0Select(cid,useAi){
  const app=$('#app');
- app.innerHTML=`<h1>Select Tier-0 assets <span class="muted" style="font-size:15px;font-weight:400">\u2014 optional</span></h1>
-   <p class="sub">Mark the crown-jewel assets for <b>this scan</b>. Auto-detected Tier-0 (privileged roles, Owner/UAA groups) are always included and pre-selected; browse any category to add your own. Then run the assessment \u2014 or skip to use the recommended set only.</p>
+ app.innerHTML=`<h1>Select Tier-0 assets <span class="muted" style="font-size:15px;font-weight:400">- optional</span></h1>
+   <p class="sub">Mark the crown-jewel assets for <b>this scan</b>. Auto-detected Tier-0 (privileged roles, Owner/UAA groups) are always included and pre-selected; browse any category to add your own. Then run the assessment, or skip to use the recommended set only.</p>
    <div id="t0err" class="muted small" style="color:var(--high)"></div>
    <div class="t0grid">
      <div class="t0browse card">
@@ -709,7 +920,7 @@ async function viewTier0Select(cid,useAi){
    </div>
    <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
      <button id="t0run">Run assessment</button>
-     <button id="t0skip" class="ghost">Skip \u2014 recommended only</button>
+     <button id="t0skip" class="ghost">Skip, recommended only</button>
      <span id="t0status" class="small muted"></span>
    </div>
    <div id="livelog" class="livelog" style="display:none"><div class="livelogtitle">Live analysis log</div><div id="logbody" class="logbody"></div></div>`;
@@ -819,7 +1030,7 @@ function scanTable(scans){
  ${scans.map(s=>`<tr>
    <td><input type="checkbox" class="chk cmpchk" data-id="${s.id}" ${historyState.compareA===s.id||historyState.compareB===s.id?'checked':''}></td>
    <td class="small muted">${fmtDate(s.created_at)}</td>
-   <td class="small">${esc((s.files||[]).join(', ')||'\u2014')}</td>
+   <td class="small">${esc((s.files||[]).join(', ')||'-')}</td>
    <td><span class="badge ${gradeClass(s.grade)}">${esc(s.grade||'?')}</span></td>
    <td>${s.critical}</td><td>${s.high}</td><td>${s.findings}</td><td>${s.attack_paths||0}</td>
    <td style="text-align:right;white-space:nowrap"><div class="rowacts">
@@ -918,7 +1129,7 @@ async function viewJob(jobId){
      const spin=$('#jobspin'),status=$('#jobstatus'),cancelBtn=$('#canceljob');
      if(spin)spin.style.display='none';if(cancelBtn)cancelBtn.style.display='none';
      if(st2.error){if(status)status.textContent='\u26a0 '+st2.error;}
-     else if(st2.scan_id){if(status)status.innerHTML='\u2713 Complete \u2014 <a href="#/history">View in history</a>';
+     else if(st2.scan_id){if(status)status.innerHTML='\u2713 Complete, <a href="#/history">View in history</a>';
        const dl=$('#tracedl');if(dl)dl.innerHTML=`\u2726 <a href="/api/scans/${st2.scan_id}/trace" download="scan-${st2.scan_id}-ai-trace.log">Download AI trace (.log)</a> \u00b7 <a href="/api/scans/${st2.scan_id}/trace?format=jsonl" download="scan-${st2.scan_id}-ai-trace.jsonl">.jsonl</a>`;}
      break;
    }
@@ -945,40 +1156,50 @@ function renderComparison(c){
 async function viewSettings(){
  const app=$('#app');let s={};
  try{s=await api('/api/settings');}catch(e){}
- app.innerHTML=`<h1>Settings</h1><p class="sub">Configure AI integration. Settings persist on this host.</p>
+ app.innerHTML=`<h1>Settings</h1><p class="sub">Configure PostureHound. Settings persist on this host.</p>
+ <div class="settabs">${[['ai','AI'],['collection','Collection'],['integrations','Integrations'],['account','Account']].map((c,i)=>`<button class="settab${i===0?' on':''}" data-cat="${c[0]}">${c[1]}</button>`).join('')}</div>
+ <div class="setcat" data-cat="ai">
  <div class="card" style="max-width:620px">
    <label class="fld">Anthropic API key</label>
-   <input type="password" id="key" placeholder="${s.api_key_source==='env'?'\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF loaded from .env':s.api_key_set?'\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF set \u2014 enter a new key to replace':'sk-ant-...'}" autocomplete="off" ${s.api_key_source==='env'?'disabled':''}>
-   <div class="hint">${s.api_key_source==='env'?'Key is loaded from the <code>.env</code> file \u2014 no need to enter it here. Remove it from <code>.env</code> to override via this form.':'Held in memory for this server session only. Cleared on restart. Set <code>ANTHROPIC_API_KEY</code> in <code>.env</code> to persist across restarts.'}</div>
+   <input type="password" id="key" placeholder="${s.api_key_source==='env'?'\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF loaded from .env':s.api_key_set?'\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF set, enter a new key to replace':'sk-ant-...'}" autocomplete="off" ${s.api_key_source==='env'?'disabled':''}>
+   <div class="hint">${s.api_key_source==='env'?'Key is loaded from the <code>.env</code> file, no need to enter it here. Remove it from <code>.env</code> to override via this form.':'Held in memory for this server session only. Cleared on restart. Set <code>ANTHROPIC_API_KEY</code> in <code>.env</code> to persist across restarts.'}</div>
    <div class="row" style="margin-top:10px">${s.api_key_source!=='env'?'<button id="savekey">Save key</button>':''}
      ${s.api_key_source==='settings'?'<button class="ghost" id="clearkey">Clear key</button>':''}
      <span class="small muted" id="keyst">${s.api_key_source==='env'?'\u2713 Key active (from .env)':s.api_key_set?'A key is currently set.':'No key set.'}</span></div>
    <label class="fld" style="margin-top:22px">Minimum severity shown in CLI/exports</label>
    <select id="sev">${['Info','Low','Medium','High','Critical'].map(x=>`<option ${s.min_severity===x?'selected':''}>${x}</option>`).join('')}</select>
-   <label class="fld" style="margin-top:22px">Sonnet model <span class="muted small">(Phase 2 \u2014 17 parallel specialist analysts)</span></label>
+   <label class="fld" style="margin-top:22px">Sonnet model <span class="muted small">(Phase 2, 17 parallel specialist analysts)</span></label>
    <input type="text" id="sonnetmodel" value="${esc(s.sonnet_model||'claude-sonnet-5')}" placeholder="claude-sonnet-5">
-   <label class="fld">Opus model <span class="muted small">(Phase 2b+3 \u2014 cross-domain synthesizer &amp; attack-chain correlator)</span></label>
+   <label class="fld">Opus model <span class="muted small">(Phase 2b+3, cross-domain synthesizer &amp; attack-chain correlator)</span></label>
    <input type="text" id="opusmodel" value="${esc(s.opus_model||'claude-opus-5')}" placeholder="claude-opus-5">
-   <label class="fld">Skeptic model <span class="muted small">(Phase 4 \u2014 adversarial review of Critical/High findings)</span></label>
+   <label class="fld">Skeptic model <span class="muted small">(Phase 4, adversarial review of Critical/High findings)</span></label>
    <input type="text" id="haikumodel" value="${esc(s.haiku_model||'claude-sonnet-5')}" placeholder="claude-sonnet-5">
+   <label class="fld" style="margin-top:22px">AI leads confidence threshold <span class="muted small">(main view sets aside AI findings below this, and all 'lead'-tier, into a separate "Leads" view)</span></label>
+   <div class="row" style="align-items:center;gap:12px">
+     <input type="range" id="leadconf" min="0" max="100" step="5" value="${typeof s.ai_lead_confidence==='number'?s.ai_lead_confidence:50}" style="flex:1">
+     <input type="number" id="leadconfn" min="0" max="100" value="${typeof s.ai_lead_confidence==='number'?s.ai_lead_confidence:50}" style="width:72px"><span class="muted small">%</span>
+   </div>
+   <div class="hint">Higher = stricter main view (more AI findings treated as leads). 0 sets aside only lead-tier findings; deterministic findings are never gated.</div>
    <div class="row" style="margin-top:10px"><button class="ghost" id="testconn">Test AI connection</button><span class="small muted" id="connst"></span></div>
    <div style="margin-top:18px"><button id="save">Save settings</button> <span class="small muted" id="st"></span></div>
  </div>
- <div class="card" style="max-width:620px;margin-top:16px">
+ </div>
+ <div class="setcat" data-cat="account" hidden>
+ <div class="card" style="max-width:620px">
    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-     <span style="font-size:15px;font-weight:700">Account &amp; sign-in</span>
-     <span style="font-size:12px">${s.auth_must_change?'<span style="color:var(--med)">● using default password</span>':'● password set'}</span>
+     <span style="font-size:15px;font-weight:700">Your account</span>
+     <span style="font-size:12px" class="muted">${esc(ME.username||'')} · ${esc((ME.role||'').toString())}</span>
    </div>
-   <p class="hint" style="margin-bottom:14px">Change the sign-in credentials for this PostureHound instance. The password is stored hashed (PBKDF2) on this host; sessions use a signed JWT. ${s.auth_must_change?'<b>You are still using the default password - change it now.</b>':''}</p>
-   <label class="fld">Username</label>
-   <input type="text" id="acctuser" value="${esc(s.auth_username||'admin')}" autocomplete="username">
+   <p class="hint" style="margin-bottom:14px">Change your own password. It is stored hashed (PBKDF2) on this host; sessions use a signed JWT. ${ME.must_change?'<b style="color:var(--med)">You are using the default password, change it now.</b>':''}</p>
    <label class="fld">Current password</label>
    <input type="password" id="acctcur" placeholder="current password" autocomplete="current-password">
    <label class="fld">New password <span class="muted small">(min 8 characters)</span></label>
    <input type="password" id="acctnew" placeholder="new password" autocomplete="new-password">
-   <div class="row" style="margin-top:10px"><button id="acctsave">Update credentials</button><span class="small muted" id="acctst"></span></div>
+   <div class="row" style="margin-top:10px"><button id="acctsave">Change password</button><span class="small muted" id="acctst"></span></div>
  </div>
- <div class="card" style="max-width:620px;margin-top:16px">
+ </div>
+ <div class="setcat" data-cat="collection" hidden>
+ <div class="card" style="max-width:620px">
    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
      <span style="font-size:15px;font-weight:700">Azure live collection</span>
      <span style="font-size:11px;padding:2px 9px;border-radius:999px;background:rgba(94,124,175,.18);color:#7d93aa;font-weight:600;letter-spacing:.04em">RESOURCE GRAPH + MS GRAPH</span>
@@ -990,7 +1211,7 @@ async function viewSettings(){
    <label class="fld">Client ID (application ID)</label>
    <input type="text" id="argclient" value="${esc(s.arg_client_id||'')}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off">
    <label class="fld">Client secret</label>
-   <input type="password" id="argsecret" placeholder="${s.arg_secret_set?'●●●●●● set - enter a new secret to replace':'client secret'}" autocomplete="off">
+   <input type="password" id="argsecret" placeholder="${s.arg_secret_set?'●●●●●● set, enter a new secret to replace':'client secret'}" autocomplete="off">
    <div class="row" style="margin-top:10px">
      <button id="argsave">Save service principal</button>
      <button class="ghost" id="argtest">Test connection</button>
@@ -998,7 +1219,9 @@ async function viewSettings(){
      <span class="small muted" id="argst"></span>
    </div>
  </div>
- <div class="card" style="max-width:620px;margin-top:16px">
+ </div>
+ <div class="setcat" data-cat="integrations" hidden>
+ <div class="card" style="max-width:620px">
    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
      <span style="font-size:15px;font-weight:700">Azure DevOps integration</span>
      <span style="font-size:11px;padding:2px 9px;border-radius:999px;background:rgba(94,124,175,.18);color:#7d93aa;font-weight:600;letter-spacing:.04em">WORK ITEMS</span>
@@ -1012,45 +1235,56 @@ async function viewSettings(){
    <input type="text" id="adoproj" value="${esc(s.ado_project||'')}" placeholder="Security" autocomplete="off">
    <label class="fld">Work item type</label>
    <input type="text" id="adotype" value="${esc(s.ado_work_item_type||'Feature')}" placeholder="Feature" autocomplete="off">
+   <label class="fld">SLA due-date field <span class="muted small">(optional, ADO field reference name)</span></label>
+   <input type="text" id="adoslafield" value="${esc(s.ado_sla_field||'')}" placeholder="e.g. Custom.SLADueDate" title="A custom due-date field to also set to the severity SLA date (the standard Target Date is always set)" autocomplete="off">
    <label class="fld">Area path <span class="muted small">(optional)</span></label>
    <input type="text" id="adoarea" value="${esc(s.ado_area_path||'')}" placeholder="Security\\Cloud" autocomplete="off">
    <label class="fld">Default parent Epic id <span class="muted small">(optional, numeric)</span></label>
-   <input type="text" id="adoepic" value="${esc(s.ado_default_parent_epic||'')}" placeholder="e.g. 1042" autocomplete="off">
+   <input type="text" inputmode="numeric" pattern="[0-9]*" id="adoepic" value="${esc(s.ado_default_parent_epic||'')}" placeholder="e.g. 1042" title="Numeric work-item id only" autocomplete="off">
    <label class="fld">Tags <span class="muted small">(comma-separated; PostureHound + severity are added automatically)</span></label>
    <input type="text" id="adotags" value="${esc(s.ado_tags||'')}" placeholder="cloud, azure, posture" autocomplete="off">
    <label class="fld">Default assignee <span class="muted small">(email / UPN)</span></label>
-   <input type="text" id="adoassignee" value="${esc(s.ado_default_assignee||'')}" placeholder="security-owner@contoso.com" autocomplete="off">
-   <div class="hint" style="margin-top:10px">PAT: ${s.ado_pat_present?'✅ PH_ADO_PAT is set':'⚠ PH_ADO_PAT not set - export it in the environment to create work items'}</div>
+   <input type="email" id="adoassignee" value="${esc(s.ado_default_assignee||'')}" placeholder="security-owner@contoso.com" autocomplete="off">
+   <div class="hint" style="margin-top:10px">PAT: ${s.ado_pat_present?'✅ PH_ADO_PAT is set':'⚠ PH_ADO_PAT not set, export it in the environment to create work items'}</div>
    <div class="row" style="margin-top:10px">
      <button id="adosave">Save</button>
      <button class="ghost" id="adotest">Test connection</button>
      <span class="small muted" id="adost"></span>
    </div>
+ </div>
  </div>`;
+ // Category tabs: show one group of settings at a time (enterprise-style).
+ qa('.settab',app).forEach(t=>t.onclick=()=>{
+   qa('.settab',app).forEach(x=>x.classList.toggle('on',x===t));
+   qa('.setcat',app).forEach(c=>{c.hidden=(c.dataset.cat!==t.dataset.cat);});
+ });
  // Every handler below must be attached defensively. This block renders different
- // controls depending on where the API key comes from - with the key supplied via
+ // controls depending on where the API key comes from, with the key supplied via
  // .env / the environment, the "Save key" and "Clear key" buttons are NOT rendered.
  // An unguarded `$('#savekey').onclick = …` therefore threw
  // "Cannot set properties of null", which aborted the rest of the function and left
- // #testconn present but with NO click handler - i.e. "Test AI connection" silently
+ // #testconn present but with NO click handler, i.e. "Test AI connection" silently
  // did nothing for exactly the users who had a working key.
  const _on=(sel,fn)=>{const el=$(sel);if(el)el.onclick=fn;return !!el;};
+ // Keep the leads threshold's slider and number box in sync.
+ {const rg=$('#leadconf'),nb=$('#leadconfn');if(rg&&nb){rg.oninput=()=>{nb.value=rg.value;};nb.oninput=()=>{let v=Math.max(0,Math.min(100,parseInt(nb.value||'0',10)||0));rg.value=v;};}}
  _on('#save',async()=>{const fd=new FormData();fd.append('min_severity',$('#sev').value);
    fd.append('sonnet_model',$('#sonnetmodel').value.trim());fd.append('opus_model',$('#opusmodel').value.trim());fd.append('haiku_model',$('#haikumodel').value.trim());
-   try{await api('/api/settings',{method:'POST',body:fd});$('#st').textContent='Saved.';toast('Settings saved.');}catch(e){$('#st').textContent='Error: '+e.message;}});
+   const lc=$('#leadconfn');if(lc)fd.append('ai_lead_confidence',String(Math.max(0,Math.min(100,parseInt(lc.value||'50',10)||0))));
+   try{await api('/api/settings',{method:'POST',body:fd});AI_LEAD_CONF=parseInt(($('#leadconfn')||{}).value||AI_LEAD_CONF,10);$('#st').textContent='Saved.';toast('Settings saved.');}catch(e){$('#st').textContent='Error: '+e.message;}});
  _on('#savekey',async()=>{const k=$('#key').value.trim();if(!k){toast('Enter a key.');return;}
    const fd=new FormData();fd.append('anthropic_key',k);
    try{await api('/api/settings',{method:'POST',body:fd});toast('Key saved (in memory).');refreshKeyPill();viewSettings();}catch(e){toast('Error: '+e.message);}});
  _on('#clearkey',async()=>{const fd=new FormData();fd.append('clear_key','true');
    try{await api('/api/settings',{method:'POST',body:fd});toast('Key cleared.');refreshKeyPill();viewSettings();}catch(e){toast('Error');}});
  _on('#acctsave',async()=>{
-   const cur=$('#acctcur').value,nw=$('#acctnew').value,un=$('#acctuser').value.trim();
+   const cur=$('#acctcur').value,nw=$('#acctnew').value;
    if(!cur){$('#acctst').textContent='Enter your current password.';return;}
    if((nw||'').length<8){$('#acctst').textContent='New password must be at least 8 characters.';return;}
-   const fd=new URLSearchParams({current_password:cur,new_password:nw,new_username:un});
+   const fd=new URLSearchParams({current_password:cur,new_password:nw});
    try{const r=await fetch('/api/auth/password',{method:'POST',body:fd});
      if(!r.ok){let d={};try{d=await r.json();}catch(_){}$('#acctst').textContent=d.detail||('HTTP '+r.status);return;}
-     toast('Credentials updated.');const bn=$('#pwbanner');if(bn)bn.hidden=true;viewSettings();
+     toast('Password changed.');ME.must_change=false;const bn=$('#pwbanner');if(bn)bn.hidden=true;viewSettings();
    }catch(e){$('#acctst').textContent=e.message;}});
  _on('#testconn',async()=>{
    const btn=$('#testconn'); btn.disabled=true; $('#connst').innerHTML='<span class="spin"></span> testing\u2026';
@@ -1100,6 +1334,7 @@ async function viewSettings(){
    fd.append('ado_org_url',$('#adourl').value.trim());
    fd.append('ado_project',$('#adoproj').value.trim());
    fd.append('ado_work_item_type',$('#adotype').value.trim()||'Feature');
+   fd.append('ado_sla_field',$('#adoslafield').value.trim());
    fd.append('ado_area_path',$('#adoarea').value.trim());
    fd.append('ado_default_parent_epic',$('#adoepic').value.trim());
    fd.append('ado_tags',$('#adotags').value.trim());
@@ -1114,6 +1349,7 @@ async function viewSettings(){
    fd.append('ado_enabled',$('#adoen').checked?'true':'false');
    fd.append('ado_org_url',$('#adourl').value.trim());fd.append('ado_project',$('#adoproj').value.trim());
    fd.append('ado_work_item_type',$('#adotype').value.trim()||'Feature');fd.append('ado_area_path',$('#adoarea').value.trim());
+   fd.append('ado_sla_field',$('#adoslafield').value.trim());
    fd.append('ado_default_parent_epic',$('#adoepic').value.trim());fd.append('ado_tags',$('#adotags').value.trim());
    fd.append('ado_default_assignee',$('#adoassignee').value.trim());
    try{await api('/api/settings',{method:'POST',body:fd});
@@ -1129,7 +1365,7 @@ let _RULES=[], _RULESTATE={q:'',cat:'',sev:'',fw:'',type:'',engine:'',scan:''}, 
 function _sevRank(s){return ['Critical','High','Medium','Low','Info'].indexOf(s);}
 async function viewRules(){
   const app=$('#app');
-  app.innerHTML='<h1>Rule Library</h1><p class="sub">Every deterministic detection rule PostureHound ships - offensive/blast-radius paths and CIS-benchmark best practices. Filter and inspect each rule; pick a scan to see whether it fired, was silent, or was not assessed.</p><div class="card" id="rulewrap">Loading…</div>';
+  app.innerHTML='<h1>Rule Library</h1><p class="sub">Every deterministic detection rule PostureHound ships, offensive/blast-radius paths and CIS-benchmark best practices. Filter and inspect each rule; pick a scan to see whether it fired, was silent, or was not assessed.</p><div class="card" id="rulewrap">Loading…</div>';
   if(!_RULES.length){try{const r=await api('/api/rules');_RULES=r.rules||[];}catch(e){$('#rulewrap').textContent='Error: '+e.message;return;}}
   let scans=[];try{scans=await api('/api/scans');}catch(e){}
   const cats=[...new Set(_RULES.map(r=>r.category))].sort();
@@ -1212,7 +1448,7 @@ function _ruleDetail(r){
 // ---- AI trace viewer ----------------------------------------------------
 async function viewTraces(){
  const app=$('#app');
- app.innerHTML='<h1>AI Traces</h1><p class="sub">The verbose reasoning transcript for each scan - how every specialist thought, what it kept or rejected, and why. Viewable here; download is an extra option. Traces exist for scans run with tracing enabled.</p><div class="card" id="tlist">Loading…</div>';
+ app.innerHTML='<h1>AI Traces</h1><p class="sub">The verbose reasoning transcript for each scan, how every specialist thought, what it kept or rejected, and why. Viewable here; download is an extra option. Traces exist for scans run with tracing enabled.</p><div class="card" id="tlist">Loading…</div>';
  let scans=[];try{scans=await api('/api/scans');}catch(e){}
  if(!scans.length){$('#tlist').innerHTML='<div class="empty">No scans yet. <a href="#/scan">Run a scan →</a></div>';return;}
  $('#tlist').innerHTML=`<table><thead><tr><th>When</th><th>Files</th><th>Grade</th><th>Findings</th><th></th></tr></thead><tbody>
@@ -1238,7 +1474,7 @@ async function viewTrace(scanId){
        <a class="btn ghost" style="padding:7px 13px;font-size:12.5px" href="/api/scans/${esc(scanId)}/trace?format=jsonl" download="scan-${esc(scanId)}-ai-trace.jsonl">.jsonl</a>
        <a class="btn ghost" style="padding:7px 13px;font-size:12.5px" href="#/traces">← All traces</a>
      </span></div>
-   <p class="sub" style="margin:6px 0 14px">Local artifact - contains tenant specifics, never part of the shareable report.</p>
+   <p class="sub" style="margin:6px 0 14px">Local artifact, contains tenant specifics, never part of the shareable report.</p>
    <div class="card" style="padding:0"><pre id="tracebody" class="logbody" style="white-space:pre-wrap;font-family:var(--mono,monospace);font-size:11.5px;line-height:1.5;max-height:72vh;margin:0;padding:16px;overflow:auto"></pre></div>`;
  let text='';
  try{
@@ -1263,7 +1499,7 @@ let GObjective='tier0';  // 'tier0' (paths to Tier-0) or 'all' (everything reach
 let GNonce=0;
 // Detail-panel request token: clicking a node/edge shows its basics INSTANTLY, then enriches from
 // the (single-worker, ~0.5s for hubs) node endpoint. Only the LATEST click's fetch may render, so a
-// slow earlier response can never paint the wrong node - the recurring "no data / wrong node" bug.
+// slow earlier response can never paint the wrong node, the recurring "no data / wrong node" bug.
 let _detailReq=0;
 const KIND_COLOR={AZUser:'#5B9BD5',AZGroup:'#57A773',AZServicePrincipal:'#B07CD6',AZApp:'#9B6FD4',
   AZManagedIdentity:'#3FB0A0',AZRole:'#E0B33A',AZKeyVault:'#E08A3C',AZStorageAccount:'#48B0C4',
@@ -1307,7 +1543,7 @@ function _iconURI(k,color){
   return 'data:image/svg+xml;utf8,'+encodeURIComponent(svg);
 }
 function _legendIcon(k){return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${_kindColor(k)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px">${_iconInner(k)}</svg>`;}
-// Minimal mono: every node muted slate; colour only carries meaning - crimson = Tier-0,
+// Minimal mono: every node muted slate; colour only carries meaning, crimson = Tier-0,
 // amber = on the active attack path. Type is read from the node SHAPE, not colour.
 function _cyStyle(){return [
   {selector:'node',style:{'background-color':'#171D28','background-opacity':0.96,'shape':'ellipse','label':'data(label)',
@@ -1326,7 +1562,7 @@ function _cyStyle(){return [
   // Incidental leaves on a busy view recede so Tier-0 / on-path / hubs carry the eye.
   {selector:'node.gdim',style:{'border-opacity':0.5,'background-image-opacity':0.55}},
   // Selected node is lifted above the pile (z-index) so its white ring/glow is never covered
-  // by overlapping neighbours - otherwise the ring only shows when the node happens to be on top.
+  // by overlapping neighbours, otherwise the ring only shows when the node happens to be on top.
   {selector:'node:selected',style:{'border-width':3.6,'border-color':'#FFFFFF','underlay-color':'#FFFFFF','underlay-opacity':0.30,'underlay-padding':9,'z-index':9999}},
   {selector:'edge',style:{'width':1.6,'line-color':'#5C687F','opacity':0.85,'curve-style':'bezier','target-arrow-shape':'triangle',
     'target-arrow-color':'#5C687F','arrow-scale':0.8,
@@ -1372,7 +1608,7 @@ function _layout(name){
   CY.fit(undefined,45);
 }
 // Size every node by centrality (degree within the view) so hubs read big and leaves small,
-// keep Tier-0 prominent, ring the focused source, and - on busy views - hide labels for the
+// keep Tier-0 prominent, ring the focused source, and, on busy views, hide labels for the
 // small unimportant leaves so the graph doesn't drown in text (Tier-0 / on-path / hubs / the
 // source keep theirs; every label returns when you zoom in via min-zoomed-font-size + hover).
 function _sizeNodes(rootId){
@@ -1444,7 +1680,7 @@ function _legendHTML(){
 function _setSource(id,label){GSource={id:id,label:label};const i=$('#gsrc');if(i)i.value=label;}
 function _setTarget(id,label){GTarget={id:id,label:label};const i=$('#gtgt');if(i)i.value=label;}
 // Select a node in the graph (if present in the current view), centre it, and show its detail
-// panel immediately - so picking a From/To from search reveals that node without a manual click.
+// panel immediately, so picking a From/To from search reveals that node without a manual click.
 function _focusNode(id,label){
   try{const el=CY&&CY.getElementById(id);
     if(el&&el.nonempty()){CY.$(':selected').unselect();el.select();CY.animate({center:{eles:el}},{duration:200});}
@@ -1488,7 +1724,7 @@ async function _blastRadius(id,label){
   }catch(e){if(n===GNonce)$('#gmsg').textContent=e.message;}
 }
 // Opt-in view: the node's DIRECT relationships across ALL edge types (not just escalation
-// → Tier-0). Exactly one hop - the node plus everything it is directly connected to.
+// → Tier-0). Exactly one hop, the node plus everything it is directly connected to.
 async function _allRelations(id,label){
   const n=++GNonce; GLast=()=>_allRelations(id,label); GView={kind:'allrel',source:id,label:label||null};
   $('#gmsg').textContent='Mapping all relationships…';
@@ -1558,7 +1794,7 @@ async function _clearGraph(){
   _defaultSide(); _defaultDetail(); _loadOverview();
 }
 // Loader: render the node's basics immediately (never a blank/Loading dead-end), then enrich
-// from the endpoint - but only if this is still the latest click (nonce guard).
+// from the endpoint, but only if this is still the latest click (nonce guard).
 async function _showNode(basic){
   const my=++_detailReq;
   _renderNode(basic, true);                 // instant paint from the data cytoscape already has
@@ -1587,7 +1823,7 @@ function _renderNode(d, partial){
     <div class="gactions">
       <button class="btn sm" id="gapaths">Paths to Tier-0</button>
       <button class="btn ghost sm" id="gablast" title="Everything this node can reach downstream via escalation edges, ranked by impact">Blast radius</button>
-      <button class="btn ghost sm" id="gaall" title="The node's DIRECT relationships across ALL edge types (one hop only) - everything it is directly connected to, not just escalation paths">All relationships</button>
+      <button class="btn ghost sm" id="gaall" title="The node's DIRECT relationships across ALL edge types (one hop only), everything it is directly connected to, not just escalation paths">All relationships</button>
       <button class="btn ghost sm" id="gaexp">Expand</button>
       <button class="btn ghost sm" id="gasrc">Set as From</button>
       <button class="btn ghost sm" id="gatgt">Set as To</button>
@@ -1664,7 +1900,45 @@ async function _runPreset(name,label){
   $('#gmsg').textContent='Running: '+(label||name)+'…';
   try{const els=await api('/api/scans/'+GScan+'/graph/preset?name='+encodeURIComponent(name)); if(n!==GNonce)return;
     _renderGraph(_decorate(els));$('#gmsg').textContent=els.message||'';
+    _showPresetResults(label||name, els);          // list the result nodes beside the graph
   }catch(e){if(n===GNonce)$('#gmsg').textContent=e.message;}
+}
+// List the query's result nodes (its "subjects", the SPs/guests/principals/assets it found)
+// in the right-hand detail panel. Each row locates that node in the graph on click.
+function _showPresetResults(label, els){
+  const d=$('#gdetail'); if(!d)return;
+  const subjects=els.subjects||[];
+  const nmap={}; (els.nodes||[]).forEach(nd=>{nmap[nd.data.id]=nd.data;});
+  // Per-subject reach stats from the returned paths (targets reached + nearest hop count).
+  const stat={}; (els.paths||[]).forEach(p=>{
+    if(!p||!p.length)return; const s=p[0], t=p[p.length-1], hops=p.length-1;
+    const o=stat[s]||(stat[s]={tgts:{},min:Infinity}); if(t!==s)o.tgts[t]=1;
+    if(hops>0)o.min=Math.min(o.min,hops);
+  });
+  if(!subjects.length){
+    d.innerHTML='<div class="k">'+esc(label)+'</div><div class="muted small">No matching nodes in this scan.</div>';
+    return;
+  }
+  const rows=subjects.map(id=>{
+    const nd=nmap[id]||{label:id,kind:'AZUnknown',tier0:false};
+    const st=stat[id]; const nt=st?Object.keys(st.tgts).length:0; let sub='';
+    if(nt)sub='reaches '+nt+(isFinite(st.min)?' · nearest '+st.min+'h':'');
+    else if(nd.tier0)sub='Tier-0 asset';
+    return '<div class="gpath" data-id="'+esc(id)+'" title="'+esc(nd.label)+'"><span class="gpk">'
+      +_legendIcon(nd.kind)+' '+esc(nd.label)+'</span>'+(sub?'<span class="gph">'+esc(sub)+'</span>':'')+'</div>';
+  }).join('');
+  d.innerHTML='<div class="k">'+esc(label)+' <span class="muted small">('+subjects.length+')</span></div>'
+    +(els.message?'<div class="muted small" style="margin-bottom:8px">'+esc(els.message)+'</div>':'')
+    +'<div class="gpathlist" style="max-height:560px">'+rows+'</div>'
+    +(els.truncated?'<div class="muted small" style="margin-top:6px">List capped, narrow the query to see every match.</div>':'');
+  qa('.gpath',d).forEach(x=>x.onclick=()=>_locateNode(x.dataset.id));
+}
+// Select + centre a node in the current graph without replacing the result list.
+function _locateNode(id){
+  try{const el=CY&&CY.getElementById(id);
+    if(el&&el.nonempty()){CY.$(':selected').unselect();el.select();
+      CY.animate({center:{eles:el},zoom:Math.max(CY.zoom(),0.9)},{duration:250});}
+  }catch(e){}
 }
 async function _renderPathsList(){
   const el=$('#gpaths'); if(!el)return;
@@ -1731,11 +2005,11 @@ async function _renderTier0List(){
 async function viewGraph(scanId,focusId,targetId){
   const app=$('#app'); GSource=null; GTarget=null;
   let scans=[]; try{scans=await api('/api/scans');}catch(e){}
-  if(!scans.length){app.innerHTML='<h1>Attack Graph</h1><p class="sub">No scans yet - run a scan first.</p>';return;}
+  if(!scans.length){app.innerHTML='<h1>Attack Graph</h1><p class="sub">No scans yet, run a scan first.</p>';return;}
   GScan = (scanId && scans.some(s=>s.id===scanId)) ? scanId : scans[0].id;
   const opts=scans.map(s=>`<option value="${esc(s.id)}" ${s.id===GScan?'selected':''}>${esc(fmtDate(s.created_at))} · ${esc(s.grade||'?')} (${s.score||0})</option>`).join('');
   app.innerHTML=`<h1>Attack Graph</h1>
-   <p class="sub">Interactive map of the identity attack graph - all escalation paths to Tier-0. Everything is muted; only <b style="color:#E5484D">Tier-0 targets</b> and the <b style="color:#E0993F">active attack path</b> carry colour. The icon inside each node encodes its type.</p>
+   <p class="sub">Interactive map of the identity attack graph, all escalation paths to Tier-0. Everything is muted; only <b style="color:#E5484D">Tier-0 targets</b> and the <b style="color:#E0993F">active attack path</b> carry colour. The icon inside each node encodes its type.</p>
    <div id="gstage">
    <div class="gtoolbar">
      <select id="gscan" title="Scan">${opts}</select>
@@ -1760,7 +2034,10 @@ async function viewGraph(scanId,focusId,targetId){
   if(typeof cytoscape==='undefined'){$('#gmsg').textContent='Graph library failed to load.';return;}
   CY=cytoscape({container:$('#cy'),style:_cyStyle(),wheelSensitivity:0.25,
     pixelRatio:1,textureOnViewport:true,hideEdgesOnViewport:true,motionBlur:false,
-    autoungrabify:false});
+    // Nodes are laid out by the force layout and never hand-positioned, so make them
+    // non-grabbable: a click that moves a pixel then becomes a clean 'tap' (which refreshes
+    // the detail panel) instead of a silent node-drag that fired nothing.
+    autoungrabify:true});
   _wireHover();
   // Forgiving selection: a dense/zoomed-out graph packs nodes closer than a fingertip, so
   // instead of requiring a pixel-perfect hit we select the node whose CENTRE is nearest the
@@ -1768,7 +2045,7 @@ async function viewGraph(scanId,focusId,targetId){
   // is genuinely near a line and not a node, and to the default panel when near neither.
   const TAP_RADIUS_PX=44;
   // Click → detail panel. PRIMARY path is cytoscape's own hit-test via ev.target: a tap anywhere
-  // on a node's body (ANY size - the old distance-threshold missed the edge of big hub nodes,
+  // on a node's body (ANY size, the old distance-threshold missed the edge of big hub nodes,
   // which is why clicks "sometimes" showed nothing) selects it. Only a background tap falls back
   // to a nearest-node search (for the gaps between tiny overlapping nodes), else clears the panel.
   function _resolveTap(ev){
@@ -1812,12 +2089,148 @@ async function viewGraph(scanId,focusId,targetId){
   else{_loadOverview();}
 }
 
-const routes={dashboard:viewDashboard,scan:viewScan,history:viewHistory,graph:viewGraph,rules:viewRules,traces:viewTraces,settings:viewSettings};
-function router(){const parts=(location.hash.replace('#/','')||'dashboard').split('/');const base=parts[0];setNav(base);const m=document.querySelector('main');if(m)m.classList.toggle('graphwide',base==='graph');if(base==='job'){viewJob(parts[1]);}else if(base==='trace'){viewTrace(parts[1]);}else if(base==='graph'){viewGraph(parts[1],parts[2]?decodeURIComponent(parts[2]):null,parts[3]?decodeURIComponent(parts[3]):null);}else{(routes[base]||viewDashboard)();}}
+// ---- Compliance (CIS Azure Foundations coverage matrix) -----------------
+async function viewCompliance(){
+  const app=$('#app');
+  app.innerHTML='<h1>Compliance</h1><p class="sub">Loading CIS coverage…</p>';
+  let cat={}, scans=[];
+  try{cat=await api('/api/cis');}catch(e){app.innerHTML='<h1>Compliance</h1><p class="sub">'+esc(e.message)+'</p>';return;}
+  try{scans=await api('/api/scans');}catch(e){}
+  const sm=cat.summary||{}; let perScan=null, scan=scans[0]||null;
+  if(scan){try{perScan=await api('/api/scans/'+scan.id+'/cis');}catch(e){}}
+  // Merge per-scan status onto the catalog rows (keyed by control id), including the per-rule
+  // evidence (fired findings' entities, pass/clean rules, not-assessed reasons) so a control can
+  // be audited like a finding.
+  const statusById={}; if(perScan)(perScan.controls||[]).forEach(c=>{statusById[c.id]={status:c.status,fired:c.fired,rules:c.rules};});
+  // One covering-rule's evidence line: red/green/amber header + the audit trail behind it.
+  function evRule(d){
+    const EC={fail:'#d1373c',pass:'#2f9e63',not_assessed:'#a7841b'}; const col=EC[d.status]||'#727a89';
+    const head=`<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+      <span style="font-family:var(--mono);font-size:10.5px;color:${col};font-weight:700">${esc((d.status||'').replace('_',' ').toUpperCase())}</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--tx3)">${esc(d.rule_id||'')}</span>
+      <span style="font-size:12.5px">${esc(d.title||'')}</span>
+      ${d.severity?`<span class="muted small">${esc(d.severity)}</span>`:''}</div>`;
+    let body='';
+    if(d.status==='fail'){
+      const ents=(d.entities||[]).map(e=>`<li><b class="mono">${esc(e.name)}</b> <span class="muted">${esc(e.kind)}</span>${e.detail?`, <span class="muted small">${esc(e.detail)}</span>`:''}</li>`).join('');
+      body=`<div class="muted small" style="margin:2px 0">${d.affected||0} affected</div>`
+        +(ents?`<ul style="margin:2px 0;padding-left:16px;font-size:12px;line-height:1.5">${ents}</ul>`:'')
+        +(d.remediation?`<div class="small" style="margin-top:3px;color:var(--tx2)"><b>Fix:</b> ${esc(d.remediation)}</div>`:'');
+    } else if(d.status==='not_assessed'){
+      body=`<div class="muted small" style="margin:2px 0">${esc(d.reason||'required data was not collected')}</div>`;
+    } else {
+      body=`<div class="muted small" style="margin:2px 0">${esc(d.detail||'Assessed; no violation found.')}</div>`;
+    }
+    return `<div style="padding:7px 0;border-top:1px solid var(--border)">${head}${body}</div>`;
+  }
+  // The expandable detail for a control: per-rule evidence, or an honest note when none exists.
+  function ctrlDetail(r){
+    const st=statusById[r.id];
+    if(st&&st.rules&&st.rules.length) return st.rules.map(evRule).join('');
+    if(r.requires) return `<div class="muted small" style="padding:7px 0">Needs data PostureHound does not collect yet: ${esc(r.requires)}. Grant the scanning service principal the required access and re-scan.</div>`;
+    if(!perScan) return `<div class="muted small" style="padding:7px 0">Select or run a scan to see the per-control evidence.</div>`;
+    return `<div class="muted small" style="padding:7px 0">No covering rule for this control.</div>`;
+  }
+  const SB={pass:['#2f9e63','Pass'],fail:['#d1373c','Fail'],not_assessed:['#a7841b','Not assessed'],no_coverage:['#727a89','No rule yet']};
+  function badge(r){
+    const st=statusById[r.id];
+    if(st){const [col,lbl]=SB[st.status]||SB.no_coverage;return `<span class="cbadge" style="color:${col};border-color:${col}">${lbl}</span>`;}
+    if(r.covered) return '<span class="cbadge" style="color:#2f9e63;border-color:#2f9e63">Covered</span>';
+    // An uncovered control is NOT a silent gap: if it needs data we don't collect, say so.
+    if(r.requires) return `<span class="cbadge" style="color:#5a77a8;border-color:#5a77a8" title="${esc(r.requires)}">Needs collection</span>`;
+    return '<span class="cbadge" style="color:#727a89;border-color:#727a89">No rule yet</span>';
+  }
+  // group controls by section
+  const secs={}; (cat.controls||[]).forEach(c=>{(secs[c.section]=secs[c.section]||{name:c.section_name,rows:[]}).rows.push(c);});
+  const scoreCard = perScan&&perScan.score_pct!=null
+    ? `<div class="ccard"><div class="cnum" style="color:${perScan.score_pct>=80?'#2f9e63':perScan.score_pct>=50?'#a7841b':'#d1373c'}">${perScan.score_pct}%</div><div class="clbl">Posture score<br><span class="muted small">pass / assessed</span></div></div>`
+    : '';
+  const counts=(perScan&&perScan.counts)||{};
+  const countsCard = perScan
+    ? `<div class="ccard"><div class="crow"><span style="color:#2f9e63">${counts.pass||0} pass</span> · <span style="color:#d1373c">${counts.fail||0} fail</span></div><div class="crow muted">${counts.not_assessed||0} not assessed · ${counts.no_coverage||0} no rule</div><div class="clbl muted small">${scan?('scan '+esc(fmtDate(scan.created_at))):''}</div></div>`
+    : '';
+  app.innerHTML=`<h1>Compliance</h1>
+    <p class="sub">${esc(sm.version||'CIS Azure Foundations Benchmark')} · rule coverage across the benchmark. Controls with no rule are labelled with the data they would need, so a gap is never mistaken for a pass. The remaining controls need resource/config collection PostureHound does not yet gather (Defender, diagnostic logging, encryption and network config).</p>
+    <div class="cgrid">
+      <div class="ccard"><div class="cnum">${sm.controls_covered||0}<span class="muted" style="font-size:16px">/${sm.controls_total||0}</span></div><div class="clbl">Controls with a rule<br><span class="muted small">${sm.coverage_pct||0}% of the catalog</span></div></div>
+      <div class="ccard"><div class="cnum" style="color:#5a77a8">${sm.controls_needs_collection||0}</div><div class="clbl">Need resource collection<br><span class="muted small">${sm.accounted_pct||0}% covered or accounted for</span></div></div>
+      ${scoreCard}${countsCard}
+    </div>
+    ${Object.keys(secs).sort().map(s=>{
+      const sec=secs[s]; const cov=sec.rows.filter(r=>r.covered).length;
+      const need=sec.rows.filter(r=>!r.covered&&r.requires).length;
+      return `<div class="csec"><div class="csechead"><b>${esc(s)}. ${esc(sec.name)}</b> <span class="muted small">${cov}/${sec.rows.length} covered${need?` · ${need} need collection`:''}</span></div>`
+        + sec.rows.map(r=>`<div class="cctl" data-cid="${esc(r.id)}">
+          <div class="crowitem" style="cursor:pointer">
+            <span class="cid">${esc(r.id)}</span>
+            <span class="ctitle">${esc(r.title)}</span>
+            <span class="crules">${(r.covered_by||[]).map(x=>`<span class="rchip">${esc(x)}</span>`).join('')||(r.requires?`<span class="muted small">${esc(r.requires)}</span>`:'<span class="muted small">-</span>')}</span>
+            ${badge(r)}
+            <span class="ccev" style="color:var(--tx3);font-size:10px;margin-left:8px;transition:transform .15s">▶</span>
+          </div>
+          <div class="ccdetail" style="display:none;padding:2px 2px 10px 14px">${ctrlDetail(r)}</div>
+        </div>`).join('')
+        + '</div>';
+    }).join('')}`;
+  // Click a control to reveal the evidence behind its pass/fail, like expanding a finding.
+  qa('.cctl',app).forEach(c=>{
+    const row=c.querySelector('.crowitem'), det=c.querySelector('.ccdetail'), ev=c.querySelector('.ccev');
+    row.onclick=()=>{const open=det.style.display==='none';det.style.display=open?'block':'none';if(ev)ev.style.transform=open?'rotate(90deg)':'';};
+  });
+}
+// ---- Users & Roles (RBAC admin) ----------------------------------------------
+async function viewUsers(){
+  const app=$('#app');
+  app.innerHTML='<h1>Users &amp; Roles</h1><p class="sub">Loading…</p>';
+  let d; try{d=await api('/api/users');}catch(e){app.innerHTML='<h1>Users &amp; Roles</h1><p class="sub">'+esc(e.message)+'</p>';return;}
+  const roles=d.roles||{}, perms=d.permissions||[];
+  const roleSel=(sel)=>Object.keys(roles).map(r=>`<option value="${esc(r)}" ${r===sel?'selected':''}>${esc(roles[r].label||r)}</option>`).join('');
+  const userRows=(d.users||[]).map(u=>`<tr>
+     <td class="un">${esc(u.username)}${u.username===ME.username?' <span class="muted small">(you)</span>':''}${u.must_change?'<br><span class="small" style="color:var(--med)">● default password</span>':''}</td>
+     <td><select class="urole" data-u="${esc(u.username)}" ${u.username===ME.username?'disabled title="You cannot change your own role"':''}>${roleSel(u.role)}</select></td>
+     <td style="text-align:right;white-space:nowrap"><button class="btn ghost rsm uresetpw" data-u="${esc(u.username)}">Reset password</button> ${u.username!==ME.username?`<button class="btn ghost rsm udel" data-u="${esc(u.username)}" style="border-color:rgba(242,92,112,.4);color:var(--crit)">Delete</button>`:''}</td></tr>`).join('');
+  const roleRows=Object.entries(roles).map(([k,v])=>{
+    const all=v.permissions.includes('*');
+    const chips=all?'<b style="color:var(--tx)">All permissions</b>':(perms.filter(p=>v.permissions.includes(p.key)).map(p=>`<span class="rchip">${esc(p.key)}</span>`).join('')||'<span class="muted small">none</span>');
+    return `<tr><td class="un">${esc(v.label||k)}${v.builtin?' <span class="muted small">built-in</span>':''}</td><td><div class="uperms">${chips}</div></td>
+      <td style="text-align:right;white-space:nowrap">${v.builtin?'<span class="muted small">-</span>':`<button class="btn ghost rsm roledel" data-r="${esc(k)}" style="border-color:rgba(242,92,112,.4);color:var(--crit)">Delete</button>`}</td></tr>`;}).join('');
+  app.innerHTML=`<h1>Users &amp; Roles</h1><p class="sub">Create users, assign a role, and define what each role can see. Administrators have every permission.</p>
+   <div class="card" style="max-width:860px"><div class="subhead">Users</div>
+     <table class="utable"><thead><tr><th>Username</th><th>Role</th><th style="text-align:right">Actions</th></tr></thead><tbody>${userRows}</tbody></table>
+     <div class="formsec"><div class="k">Add a user</div>
+       <div class="uform">
+         <input id="nu_user" class="in" placeholder="username" autocomplete="off">
+         <input id="nu_pw" class="in" type="password" placeholder="password (8+ chars)" autocomplete="new-password">
+         <select id="nu_role">${roleSel('viewer')}</select>
+         <button id="nu_add">Create user</button><span class="small muted" id="nu_st"></span></div>
+     </div></div>
+   <div class="card" style="max-width:860px;margin-top:16px"><div class="subhead">Roles</div>
+     <table class="utable"><thead><tr><th style="min-width:140px">Role</th><th>Permissions</th><th style="text-align:right">Actions</th></tr></thead><tbody>${roleRows}</tbody></table>
+     <div class="formsec"><div class="k">Create a custom role</div>
+       <div class="uform"><input id="nr_name" class="in" placeholder="role id (e.g. soc-analyst)" autocomplete="off"><input id="nr_label" class="in" placeholder="display name" autocomplete="off"></div>
+       <div class="permgrid">${perms.map(p=>`<label><input type="checkbox" class="nr_perm" value="${esc(p.key)}"> ${esc(p.label)}</label>`).join('')}</div>
+       <div style="margin-top:4px"><button id="nr_add">Create role</button><span class="small muted" id="nr_st"></span></div>
+     </div></div>`;
+  const post=(url,fd,ok)=>api(url,{method:fd?'POST':'DELETE',body:fd}).then(()=>{toast(ok);viewUsers();}).catch(e=>toast(e.message));
+  qa('.urole',app).forEach(s=>s.onchange=()=>{const fd=new FormData();fd.append('role',s.value);post('/api/users/'+encodeURIComponent(s.dataset.u)+'/role',fd,'Role updated.');});
+  qa('.udel',app).forEach(b=>b.onclick=()=>{if(b.textContent!=='Sure?'){b.textContent='Sure?';setTimeout(()=>{b.textContent='Delete';},3000);return;}api('/api/users/'+encodeURIComponent(b.dataset.u),{method:'DELETE'}).then(()=>{toast('User deleted.');viewUsers();}).catch(e=>toast(e.message));});
+  qa('.uresetpw',app).forEach(b=>b.onclick=()=>{const pw=prompt('New password for '+b.dataset.u+' (8+ characters):');if(!pw)return;const fd=new FormData();fd.append('new_password',pw);post('/api/users/'+encodeURIComponent(b.dataset.u)+'/password',fd,'Password reset.');});
+  qa('.roledel',app).forEach(b=>b.onclick=()=>{const fd=null;api('/api/roles/'+encodeURIComponent(b.dataset.r),{method:'DELETE'}).then(()=>{toast('Role deleted.');viewUsers();}).catch(e=>toast(e.message));});
+  $('#nu_add').onclick=()=>{const fd=new FormData();fd.append('username',$('#nu_user').value.trim());fd.append('password',$('#nu_pw').value);fd.append('role',$('#nu_role').value);
+    api('/api/users',{method:'POST',body:fd}).then(()=>{toast('User created.');viewUsers();}).catch(e=>$('#nu_st').textContent=e.message);};
+  $('#nr_add').onclick=()=>{const fd=new FormData();fd.append('name',$('#nr_name').value.trim());fd.append('label',$('#nr_label').value.trim());
+    fd.append('permissions',qa('.nr_perm',app).filter(c=>c.checked).map(c=>c.value).join(','));
+    api('/api/roles',{method:'POST',body:fd}).then(()=>{toast('Role created.');viewUsers();}).catch(e=>$('#nr_st').textContent=e.message);};
+}
+const routes={dashboard:viewDashboard,scan:viewScan,history:viewHistory,graph:viewGraph,rules:viewRules,compliance:viewCompliance,traces:viewTraces,users:viewUsers,settings:viewSettings};
+function _denied(){const app=$('#app');if(app)app.innerHTML='<h1>No access</h1><p class="sub">Your role does not have permission to view this screen. Contact an administrator if you need access.</p>';}
+function router(){const parts=(location.hash.replace('#/','')||'dashboard').split('/');const base=parts[0];setNav(base);const m=document.querySelector('main');if(m)m.classList.toggle('graphwide',base==='graph');
+  const need=ROUTE_PERM[base]; if(need && !PERMS.has(need)){_denied();return;}
+  if(base==='job'){viewJob(parts[1]);}else if(base==='trace'){viewTrace(parts[1]);}else if(base==='graph'){viewGraph(parts[1],parts[2]?decodeURIComponent(parts[2]):null,parts[3]?decodeURIComponent(parts[3]):null);}else{(routes[base]||viewDashboard)();}}
 window.addEventListener('hashchange',router);
 // Clicking a nav link whose hash is already current fires no hashchange, so the view
 // (and, for the graph, its presets) would not refresh. Re-run the router on that no-op
-// click so every navigation re-fetches - the graph explorer always shows current presets.
+// click so every navigation re-fetches, the graph explorer always shows current presets.
 document.querySelectorAll('nav a[href^="#/"]').forEach(a=>a.addEventListener('click',()=>{
   if(location.hash===a.getAttribute('href')) router();
 }));

@@ -30,6 +30,7 @@ def assess_collection(g: Graph) -> dict:
     n_app = len(g.nodes_of_kind(NodeKind.APP))
     n_sp = len(g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL))
     n_sub = len(g.nodes_of_kind(NodeKind.SUBSCRIPTION))
+    n_mg = len(g.nodes_of_kind(NodeKind.MANAGEMENT_GROUP))
     n_kv = len(g.nodes_of_kind(NodeKind.KEY_VAULT))
     n_users = len(g.nodes_of_kind(NodeKind.USER))
 
@@ -45,19 +46,33 @@ def assess_collection(g: Graph) -> dict:
         warn("warning", "NO_TENANT", "No tenant object was collected; tenant-level context is missing.")
     if n_app == 0 and n_sp == 0:
         warn("warning", "NO_APPS",
-             "No applications or service principals were collected - the Entra application plane "
+             "No applications or service principals were collected, the Entra application plane "
              "appears un-enumerated. Application/SP escalation rules cannot fire.")
     if n_users > 0 and not has_entra_role:
         warn("warning", "NO_ENTRA_ROLES",
-             "Users were collected but no directory-role assignments were - privileged-role rules "
+             "Users were collected but no directory-role assignments were, privileged-role rules "
              "cannot fire. Re-run collection with directory role data.")
-    if n_sub > 0 and not has_rbac:
+    if n_sub == 0 and n_mg == 0:
+        # The ENTIRE Azure Resource Manager plane is absent, not one subscription or management
+        # group was collected. Every resource-plane check (Azure RBAC, Key Vault, Storage, VM,
+        # Managed Identity, Logic App, subscription/MG escalation paths) is dark. This is the most
+        # consequential under-collection: only the Entra directory was enumerated. Without this
+        # warning the gap shows ONLY as per-rule "not assessed" entries, which reads as "nothing
+        # wrong there", the exact silent-absence failure this module exists to prevent.
+        warn("warning", "NO_RESOURCE_PLANE",
+             "No Azure subscriptions or management groups were collected, the entire Azure "
+             "resource plane is un-enumerated, so all Azure RBAC, Key Vault, Storage, VM, "
+             "Managed Identity and Logic App checks could not run (only the Entra directory was "
+             "assessed). The collecting service principal almost certainly lacks an Azure RBAC "
+             "role: assign it Reader at the root management group (Tenant Root Group), then "
+             "re-run collection to assess the resource plane.")
+    elif n_sub > 0 and not has_rbac:
         warn("warning", "NO_RBAC",
-             "Subscriptions were collected but no Azure RBAC role assignments were - the resource "
+             "Subscriptions were collected but no Azure RBAC role assignments were, the resource "
              "plane is blind. The collecting principal may lack read access to IAM.")
     if n_kv > 0 and not has_kv_policy:
         warn("info", "NO_KV_POLICY",
-             "Key Vaults were collected but no access policies or RBAC secret-access edges were found - "
+             "Key Vaults were collected but no access policies or RBAC secret-access edges were found, "
              "Key Vault data-plane exposure cannot be assessed. The vault may use RBAC-only authorization, "
              "or policies were not collected.")
 
@@ -66,7 +81,7 @@ def assess_collection(g: Graph) -> dict:
     users = g.nodes_of_kind(NodeKind.USER)
     if users and not any("onPremisesSyncEnabled" in (u.props or {}) for u in users):
         warn("warning", "NO_SYNC_FIELD",
-             "No user has the onPremisesSyncEnabled property - AzureHound's default collection omits "
+             "No user has the onPremisesSyncEnabled property, AzureHound's default collection omits "
              "it, so the on-prem synced-admin check (AZ-IDENT-007) is blind. Collect with the field "
              "selected.")
     # accountEnabled coverage is a ratio, not all-or-nothing: warning only when the
@@ -76,16 +91,16 @@ def assess_collection(g: Graph) -> dict:
         with_enabled = sum(1 for u in users if "accountEnabled" in (u.props or {}))
         if with_enabled == 0:
             warn("info", "NO_ACCOUNT_ENABLED",
-                 "No user has the accountEnabled property collected - disabled-account "
+                 "No user has the accountEnabled property collected, disabled-account "
                  "checks (AZ-IDENT-006, AZ-HYG-005) cannot fire.")
         elif with_enabled < len(users) * 0.9:
             warn("warning", "PARTIAL_ACCOUNT_ENABLED",
-                 f"Only {with_enabled} of {len(users)} users have accountEnabled collected - "
+                 f"Only {with_enabled} of {len(users)} users have accountEnabled collected, "
                  f"the remaining {len(users) - with_enabled} are assumed enabled, so "
                  f"disabled-but-privileged accounts among them cannot be detected.")
 
     # PIM role-eligibility. Without this, AZ-IDENT-010 returns zero and the pim_risk
-    # specialist sees an empty section - both of which render as a clean pass. This is
+    # specialist sees an empty section, both of which render as a clean pass. This is
     # the single most dangerous silence in the tool: "no shadow admins found" when the
     # truth is "shadow admins were never looked for".
     n_roles = len(g.nodes_of_kind(NodeKind.ROLE))
@@ -99,7 +114,7 @@ def assess_collection(g: Graph) -> dict:
 
     # On-prem identity linkage. Every onPremises* field is omitted by AzureHound's
     # default $select, and the fact pack previously rendered that absence as
-    # synced_from_onprem=false - asserting every Tier-0 principal is cloud-only.
+    # synced_from_onprem=false, asserting every Tier-0 principal is cloud-only.
     if users and not any(
         any(k.startswith("onPremises") for k in (u.props or {}))
         for u in users

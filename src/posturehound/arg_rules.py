@@ -1,11 +1,11 @@
 """Rules over Azure Resource Graph data (PostureHound v2, Track B).
 
-These consume the rows returned by azure_arg.collect() - network exposure and
+These consume the rows returned by azure_arg.collect(), network exposure and
 data-service configuration that AzureHound cannot see. The rows have a fixed
 shape because azure_arg's KQL `project`s explicit named fields, so the rule input
 is a contract this codebase defines. If an underlying Azure property path were
-wrong, that field arrives as None and the rule reports UNCONFIRMED - never a
-false finding and never a false pass - exactly as the graph rules do for a
+wrong, that field arrives as None and the rule reports UNCONFIRMED, never a
+false finding and never a false pass, exactly as the graph rules do for a
 not-collected property.
 
 Each rule is self-contained (carries its own drill-down detail) so it needs no
@@ -89,7 +89,7 @@ _MGMT_PORTS = {"22", "3389", "5985", "5986", "1433", "3306", "5432", "6379", "27
           detail={
               "summary": "An NSG rule allows inbound traffic from any internet source.",
               "why": "An allow-any inbound rule places the protected resources directly on the internet. If the rule covers a management port (SSH, RDP, WinRM) or a database port, the service is exposed to continuous internet-wide scanning, brute force and exploit attempts with no network barrier in front of it.",
-              "scenario": "An attacker scans Azure IP ranges, finds the open management or database port, and brute-forces or exploits the service directly - no foothold inside the tenant network required.",
+              "scenario": "An attacker scans Azure IP ranges, finds the open management or database port, and brute-forces or exploits the service directly, no foothold inside the tenant network required.",
               "impact": "Direct internet exposure of the protected workload; the first step in most external-compromise chains.",
               "steps": [
                   "Replace 'Any'/'0.0.0.0/0'/'Internet' sources with specific IP ranges or ASGs.",
@@ -130,7 +130,7 @@ def nsg_any_inbound(rows):
           })
 def public_ip_associated(rows):
     return [_e(r, "Public IP Address", confirmed=True, ipAddress=r.get("ipAddress"),
-               note="associated to a resource - internet-routable")
+               note="associated to a resource, internet-routable")
             for r in rows if r.get("associated")]
 
 
@@ -163,7 +163,7 @@ def sql_public_access(rows):
                           note="public network access enabled"))
         elif v is None:
             out.append(_e(r, "SQL Server", confirmed=False, publicNetworkAccess="not returned",
-                          note="publicNetworkAccess not returned by Resource Graph - UNCONFIRMED"))
+                          note="publicNetworkAccess not returned by Resource Graph, UNCONFIRMED"))
     return out
 
 
@@ -187,13 +187,13 @@ def sql_weak_tls(rows):
         v = r.get("minimalTlsVersion")
         if isinstance(v, str) and v.strip() in ("1.0", "1.1"):
             out.append(_e(r, "SQL Server", confirmed=True, minimalTlsVersion=v,
-                          note=f"minimum TLS {v} - below 1.2"))
+                          note=f"minimum TLS {v}, below 1.2"))
     return out
 
 
 @arg_rule(id="ARG-SQL-003", title="SQL server firewall allows the entire internet",
           severity=Severity.CRITICAL, category=Category.STORAGE, query_key="sql_firewall_allow_all",
-          description="A SQL server firewall rule spans 0.0.0.0 to 255.255.255.255 - the entire IPv4 internet. Every host on the internet can reach the database endpoint; only credentials stand between an attacker and the data.",
+          description="A SQL server firewall rule spans 0.0.0.0 to 255.255.255.255, the entire IPv4 internet. Every host on the internet can reach the database endpoint; only credentials stand between an attacker and the data.",
           remediation="Delete the allow-all firewall rule immediately. Restrict to specific IP ranges/VNets and prefer a Private Endpoint.",
           frameworks={"CIS Azure": "4.x", "MITRE ATT&CK": "T1190", "Azure Threat Matrix": "AZT103"},
           detail={
@@ -236,7 +236,7 @@ def cosmos_public_access(rows):
                           note="public network access enabled"))
         elif v is None:
             out.append(_e(r, "Cosmos DB Account", confirmed=False, publicNetworkAccess="not returned",
-                          note="publicNetworkAccess not returned by Resource Graph - UNCONFIRMED"))
+                          note="publicNetworkAccess not returned by Resource Graph, UNCONFIRMED"))
     return out
 
 
@@ -262,6 +262,11 @@ def cosmos_local_auth(rows):
         if v is False:
             out.append(_e(r, "Cosmos DB Account", confirmed=True, disableLocalAuth=False,
                           note="key-based (local) authentication is enabled"))
+        elif v is None:
+            # Null is the insecure DEFAULT (local auth enabled) AND the value Azure returns when the
+            # flag was never set, so a missing value is surfaced UNCONFIRMED, never a silent pass.
+            out.append(_e(r, "Cosmos DB Account", confirmed=False, disableLocalAuth="not returned",
+                          note="disableLocalAuth not returned by Resource Graph (default is enabled), UNCONFIRMED"))
     return out
 
 
@@ -289,7 +294,7 @@ def postgres_public_access(rows):
                           note="public network access enabled"))
         elif v is None:
             out.append(_e(r, "PostgreSQL Server", confirmed=False, publicNetworkAccess="not returned",
-                          note="network.publicNetworkAccess not returned by Resource Graph - UNCONFIRMED"))
+                          note="network.publicNetworkAccess not returned by Resource Graph, UNCONFIRMED"))
     return out
 
 
@@ -317,7 +322,7 @@ def mysql_public_access(rows):
                           note="public network access enabled"))
         elif v is None:
             out.append(_e(r, "MySQL Server", confirmed=False, publicNetworkAccess="not returned",
-                          note="network.publicNetworkAccess not returned by Resource Graph - UNCONFIRMED"))
+                          note="network.publicNetworkAccess not returned by Resource Graph, UNCONFIRMED"))
     return out
 
 
@@ -346,6 +351,55 @@ def defender_free_tier(rows):
     return out
 
 
+@arg_rule(id="ARG-DEFENDER-002", title="Defender for Cloud agent auto-provisioning is disabled",
+          severity=Severity.LOW, category=Category.COMPUTE, query_key="defender_autoprovisioning",
+          best_practice=True,
+          description="Microsoft Defender for Cloud auto-provisioning is Off for a subscription, so the monitoring agent is not deployed automatically to new resources. Those resources are onboarded to Defender late, or not at all, leaving coverage gaps.",
+          remediation="Enable auto-provisioning of the monitoring agent (Defender for Cloud > Environment settings > Auto provisioning) so new resources are covered as they are created.",
+          frameworks={"CIS Azure": "2.3", "Best Practice": "Threat protection"},
+          detail={
+              "summary": "Defender for Cloud auto-provisioning is Off (agents not deployed automatically).",
+              "why": "Without auto-provisioning, new VMs and resources are not automatically onboarded to Defender, so their telemetry, vulnerability assessment and detections are missing until an operator onboards them by hand.",
+              "scenario": "A new VM is created and compromised before anyone manually onboards it to Defender; the activity produces no Defender alert.",
+              "impact": "Delayed or absent threat detection on newly created resources.",
+              "steps": ["Enable auto-provisioning of the Log Analytics / Azure Monitor agent.",
+                        "Confirm the setting across every subscription."],
+              "detection": "Azure Resource Graph over microsoft.security/autoProvisioningSettings for properties.autoProvision == 'Off'.",
+          })
+def defender_autoprovisioning_off(rows):
+    out = []
+    for r in rows:
+        ap = r.get("autoProvision")
+        if isinstance(ap, str) and ap.strip().lower() == "off":
+            out.append(_e(r, "Subscription", confirmed=True, autoProvision=ap,
+                          note="Defender for Cloud auto-provisioning is Off"))
+    return out
+
+
+@arg_rule(id="ARG-DEFENDER-003", title="Subscription has no Defender for Cloud security contact configured",
+          severity=Severity.LOW, category=Category.COMPUTE, query_key="defender_security_contacts_missing",
+          best_practice=True,
+          description="A subscription has no Microsoft Defender for Cloud security contact, so Defender alert and attack notifications have no destination. A high-severity alert can be raised with nobody notified.",
+          remediation="Configure a security contact email and enable alert notifications in Microsoft Defender for Cloud (Environment settings > Email notifications) for every subscription.",
+          frameworks={"CIS Azure": "2.4", "Best Practice": "Threat protection"},
+          detail={
+              "summary": "No Defender for Cloud security contact / alert notification is configured for the subscription.",
+              "why": "Defender detects threats, but if no security contact receives its alerts a high-severity detection can go unseen. Timely notification is what turns a detection into a response.",
+              "scenario": "Defender raises a high-severity alert for an in-progress attack, but with no contact configured nobody is paged and the attacker continues uninterrupted.",
+              "impact": "Defender alerts for active attacks may reach no one.",
+              "steps": ["Add a security contact email for the subscription.",
+                        "Enable notifications for high-severity alerts and for attack notifications.",
+                        "Route to a monitored distribution list or on-call, not a single person."],
+              "detection": "Azure Resource Graph: subscriptions (resourcecontainers) with no microsoft.security/securityContacts resource.",
+          })
+def defender_no_security_contact(rows):
+    # Each row is already a subscription with zero security contacts (the KQL left-join resolved the
+    # absence), so every returned row is a finding; the query returns nothing when all are covered.
+    return [_e(r, "Subscription", confirmed=True,
+               note="No Defender for Cloud security contact configured for this subscription")
+            for r in rows]
+
+
 # =========================================================================== #
 # App Service configuration
 # =========================================================================== #
@@ -356,7 +410,7 @@ def defender_free_tier(rows):
           frameworks={"CIS Azure": "9.x", "MITRE ATT&CK": "T1040"},
           detail={
               "summary": "An App Service serves plaintext HTTP (httpsOnly is off).",
-              "why": "Without HTTPS-only, traffic - including auth cookies and tokens - can traverse the network unencrypted and be captured or replayed.",
+              "why": "Without HTTPS-only, traffic, including auth cookies and tokens, can traverse the network unencrypted and be captured or replayed.",
               "scenario": "An attacker on the network captures a plaintext request to the app and replays its session token.",
               "impact": "Disclosure of session tokens and data in transit.",
               "steps": ["Set httpsOnly=true.",
@@ -370,10 +424,10 @@ def appservice_no_https(rows):
         v = r.get("httpsOnly")
         if v is False:
             out.append(_e(r, "App Service", confirmed=True, httpsOnly=False,
-                          note="HTTPS-only not enforced - serves plaintext HTTP"))
+                          note="HTTPS-only not enforced, serves plaintext HTTP"))
         elif v is None:
             out.append(_e(r, "App Service", confirmed=False, httpsOnly="not returned",
-                          note="httpsOnly not returned by Resource Graph - UNCONFIRMED"))
+                          note="httpsOnly not returned by Resource Graph, UNCONFIRMED"))
     return out
 
 
@@ -396,7 +450,7 @@ def appservice_weak_tls(rows):
         v = r.get("minTlsVersion")
         if isinstance(v, str) and v.strip() in ("1.0", "1.1"):
             out.append(_e(r, "App Service", confirmed=True, minTlsVersion=v,
-                          note=f"minimum TLS {v} - below 1.2"))
+                          note=f"minimum TLS {v}, below 1.2"))
     return out
 
 
@@ -445,7 +499,7 @@ def sql_auditing_off(rows):
         v = r.get("state")
         if isinstance(v, str) and v.strip().lower() != "enabled":
             out.append(_e(r, "SQL Server Auditing", confirmed=True, state=v,
-                          note=f"auditing state is '{v}' - not Enabled"))
+                          note=f"auditing state is '{v}', not Enabled"))
     return out
 
 
@@ -468,7 +522,7 @@ def appservice_remote_debug(rows):
 
 
 # =========================================================================== #
-# Containers - AKS / ACR / Container Apps (config AzureHound cannot see)
+# Containers, AKS / ACR / Container Apps (config AzureHound cannot see)
 # =========================================================================== #
 @arg_rule(id="ARG-AKS-001", title="AKS cluster has local (static) admin accounts enabled",
           severity=Severity.HIGH, category=Category.COMPUTE, query_key="aks_clusters",
@@ -491,7 +545,7 @@ def aks_local_accounts(rows):
                           note="local (static) admin accounts enabled"))
         elif v is None:
             out.append(_e(r, "AKS Cluster", confirmed=False, disableLocalAccounts="not returned",
-                          note="disableLocalAccounts not returned - UNCONFIRMED (Azure default is enabled)"))
+                          note="disableLocalAccounts not returned, UNCONFIRMED (Azure default is enabled)"))
     return out
 
 
@@ -524,7 +578,7 @@ def aks_public_api(rows):
           remediation="Recreate the cluster with Kubernetes RBAC enabled (it cannot be toggled on an existing cluster).",
           frameworks={"CIS AKS": "4.x"},
           detail={"summary": "Kubernetes RBAC is disabled on the AKS cluster.",
-                  "why": "Without RBAC there is no authorization boundary inside the cluster - every authenticated identity can read secrets, modify workloads and escalate.",
+                  "why": "Without RBAC there is no authorization boundary inside the cluster, every authenticated identity can read secrets, modify workloads and escalate.",
                   "scenario": "Any principal that authenticates to the cluster (even low-privilege) can read all secrets and modify any workload because no RBAC restricts them.",
                   "impact": "No in-cluster authorization; full access for any authenticated identity.",
                   "steps": ["Recreate the cluster with enableRBAC=true.", "Define least-privilege Kubernetes roles."],
@@ -595,7 +649,7 @@ def containerapp_external(rows):
           remediation="Set networkAccessPolicy to DenyAll or AllowPrivate and disable public network access; use Private Endpoints for disk import/export.",
           frameworks={"CIS Azure": "7.x"},
           detail={"summary": "A managed disk is reachable for export over the public network.",
-                  "why": "A public disk access policy lets an attacker with the right RBAC generate a SAS and download the full disk image - OS and data - over the internet.",
+                  "why": "A public disk access policy lets an attacker with the right RBAC generate a SAS and download the full disk image, OS and data, over the internet.",
                   "scenario": "An attacker with disk-export rights generates a download SAS and exfiltrates the entire disk image from outside the tenant network.",
                   "impact": "Full disk-image exfiltration over the public internet.",
                   "steps": ["Set networkAccessPolicy=DenyAll or AllowPrivate.", "Disable public network access.",
@@ -659,9 +713,16 @@ def redis_public(rows):
                   "steps": ["Set disableLocalAuth=true.", "Grant send/receive via Entra RBAC.", "Rotate existing SAS keys."],
                   "detection": "Azure Resource Graph over microsoft.servicebus/namespaces for properties.disableLocalAuth != true."})
 def servicebus_local_auth(rows):
-    return [_e(r, "Service Bus Namespace", confirmed=True, disableLocalAuth=False,
-               note="shared-key (local) authentication enabled")
-            for r in rows if r.get("disableLocalAuth") is False]
+    out = []
+    for r in rows:
+        v = r.get("disableLocalAuth")
+        if v is False:
+            out.append(_e(r, "Service Bus Namespace", confirmed=True, disableLocalAuth=False,
+                          note="shared-key (local) authentication enabled"))
+        elif v is None:
+            out.append(_e(r, "Service Bus Namespace", confirmed=False, disableLocalAuth="not returned",
+                          note="disableLocalAuth not returned by Resource Graph (default is enabled), UNCONFIRMED"))
+    return out
 
 
 @arg_rule(id="ARG-MSG-002", title="Event Hub namespace allows shared-key (local) authentication",
@@ -677,14 +738,21 @@ def servicebus_local_auth(rows):
                   "steps": ["Set disableLocalAuth=true.", "Use Entra RBAC.", "Rotate existing SAS keys."],
                   "detection": "Azure Resource Graph over microsoft.eventhub/namespaces for properties.disableLocalAuth != true."})
 def eventhub_local_auth(rows):
-    return [_e(r, "Event Hub Namespace", confirmed=True, disableLocalAuth=False,
-               note="shared-key (local) authentication enabled")
-            for r in rows if r.get("disableLocalAuth") is False]
+    out = []
+    for r in rows:
+        v = r.get("disableLocalAuth")
+        if v is False:
+            out.append(_e(r, "Event Hub Namespace", confirmed=True, disableLocalAuth=False,
+                          note="shared-key (local) authentication enabled"))
+        elif v is None:
+            out.append(_e(r, "Event Hub Namespace", confirmed=False, disableLocalAuth="not returned",
+                          note="disableLocalAuth not returned by Resource Graph (default is enabled), UNCONFIRMED"))
+    return out
 
 
 @arg_rule(id="ARG-COG-001", title="AI / Cognitive Services account allows key-based auth and public access",
           severity=Severity.MEDIUM, category=Category.STORAGE, query_key="cognitive_accounts",
-          description="An Azure AI / Cognitive Services account (including Azure OpenAI) has local (API-key) authentication enabled and/or public network access, so a leaked API key grants use of the service - and its data - from anywhere on the internet.",
+          description="An Azure AI / Cognitive Services account (including Azure OpenAI) has local (API-key) authentication enabled and/or public network access, so a leaked API key grants use of the service, and its data, from anywhere on the internet.",
           remediation="Set disableLocalAuth=true and use Entra RBAC; set publicNetworkAccess=Disabled with a Private Endpoint.",
           frameworks={"MITRE ATT&CK": "T1552.001"},
           detail={"summary": "An AI/Cognitive Services account is key-authenticated and/or publicly reachable.",
@@ -706,6 +774,11 @@ def cognitive_exposed(rows):
                 issues.append("public network access enabled")
             out.append(_e(r, "AI / Cognitive Services", confirmed=True,
                           service_kind=r.get("kind"), note="; ".join(issues)))
+        elif r.get("disableLocalAuth") is None:
+            # Local-auth status unknown and not caught by the public-access signal: surface it as
+            # UNCONFIRMED (key auth is the insecure default) rather than a silent pass.
+            out.append(_e(r, "AI / Cognitive Services", confirmed=False, service_kind=r.get("kind"),
+                          note="disableLocalAuth not returned by Resource Graph (default is enabled), UNCONFIRMED"))
     return out
 
 
@@ -792,7 +865,7 @@ def redis_weak_tls(rows):
         v = _weak_tls(r.get("minimumTlsVersion"))
         if v:
             out.append(_e(r, "Redis Cache", confirmed=True, minimumTlsVersion=v,
-                          note=f"minimum TLS {v} - below 1.2"))
+                          note=f"minimum TLS {v}, below 1.2"))
     return out
 
 
@@ -839,6 +912,32 @@ def disk_network_allow_all(rows):
     return out
 
 
+@arg_rule(id="ARG-DISK-003", title="Managed disk is encrypted with a platform-managed key, not a customer-managed key",
+          severity=Severity.LOW, category=Category.BEST_PRACTICE, query_key="managed_disks",
+          best_practice=True,
+          description="A managed disk uses a platform-managed key (the Azure default) for encryption at rest rather than a customer-managed key (CMK). CMK gives the organisation control over the key lifecycle, including rotation and revocation of the data's encryption.",
+          remediation="Where your data-classification policy requires customer control of encryption keys, attach a disk encryption set backed by a Key Vault key (CMK) to the disk.",
+          frameworks={"CIS Azure": "7.4", "Best Practice": "Encryption at rest"},
+          detail={"summary": "Managed disk encryption at rest uses a platform key, not a customer-managed key.",
+                  "why": "With a platform-managed key the organisation cannot rotate or revoke the key independently. A customer-managed key lets you cut access to the data by disabling the key, which matters for regulated or highly sensitive workloads.",
+                  "scenario": "A regulatory or incident requirement calls for revoking access to data at rest; with only a platform key there is no customer-controlled revocation lever.",
+                  "impact": "No customer control over the encryption-key lifecycle for this disk.",
+                  "steps": ["Create a disk encryption set backed by a Key Vault key.",
+                            "Apply it to disks holding regulated or sensitive data.",
+                            "Enable key rotation on the Key Vault key."],
+                  "detection": "Azure Resource Graph over microsoft.compute/disks for properties.encryption.type == 'EncryptionAtRestWithPlatformKey'."})
+def disk_platform_key_only(rows):
+    out = []
+    for r in rows:
+        et = r.get("encryptionType")
+        # Only flag a disk we can POSITIVELY see is platform-key-only; None (field absent) is left
+        # unflagged, so a wrong property path can never produce a false finding.
+        if isinstance(et, str) and et.strip().lower() == "encryptionatrestwithplatformkey":
+            out.append(_e(r, "Managed Disk", confirmed=True, encryptionType=et,
+                          note="Disk uses a platform-managed key (no CMK)"))
+    return out
+
+
 # --------------------------------------------------------------------------- runner
 from dataclasses import asdict  # noqa: E402
 
@@ -880,5 +979,22 @@ def run_arg_rules(arg) -> tuple[list[dict], list[dict]]:
             "escalation_chain": [], "evidence": [],
             "remediation": r.remediation, "detection": r.detail.get("detection", ""),
             "detail": r.detail, "references": [], "frameworks": r.frameworks,
+        })
+
+    # False-positive-storm guard for ARG-DEFENDER-003 (subscriptions with no security contact).
+    # Its query left-joins every subscription against microsoft.security/securitycontacts; if the SP
+    # cannot read the microsoft.security provider at all (Reader without Security Reader), the join
+    # yields zero contacts for EVERY subscription and the rule would flag them all. If no other
+    # security resource came back for the whole tenant (pricings AND auto-provisioning both empty),
+    # the provider is unreadable, so reclassify the finding as not_assessed instead of a false storm.
+    sec_readable = bool(rows_by_key.get("defender_pricings")) or bool(rows_by_key.get("defender_autoprovisioning"))
+    if not sec_readable and any(f.get("rule_id") == "ARG-DEFENDER-003" for f in findings):
+        findings = [f for f in findings if f.get("rule_id") != "ARG-DEFENDER-003"]
+        not_assessed.append({
+            "rule_id": "ARG-DEFENDER-003",
+            "title": "Subscription has no Defender for Cloud security contact configured",
+            "reason": ("microsoft.security provider not readable by the service principal (no Defender "
+                       "pricings or auto-provisioning returned); cannot verify security contacts"),
+            "needs": ["Azure Resource Graph: microsoft.security (Security Reader on the SP)"],
         })
     return findings, not_assessed

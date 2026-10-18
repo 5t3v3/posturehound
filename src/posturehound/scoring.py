@@ -18,11 +18,11 @@ _ESCALATION_EDGES = {
     EdgeType.CAN_REACH_KV_SECRET, EdgeType.CAN_GET_STORAGE_KEY, EdgeType.CAN_EXEC_AKS,
     # Data-plane exfiltration and supply-chain image poisoning. These are DERIVED as
     # abuse edges (derive.py) but were omitted here, so every path through them -
-    # storage-blob reads, ACR image pushes - was computed and then thrown away.
+    # storage-blob reads, ACR image pushes, was computed and then thrown away.
     EdgeType.CAN_READ_STORAGE_BLOB, EdgeType.CAN_PUSH_CONTAINER,
     # PIM self-activation: a principal ELIGIBLE for a role can activate it at will
     # (often with no approval). Traversing this edge is what makes a shadow admin -
-    # eligible-for-Global-Admin - a real path to the Tier-0 role, not just a tag.
+    # eligible-for-Global-Admin, a real path to the Tier-0 role, not just a tag.
     EdgeType.ELIGIBLE_FOR_ROLE,
     EdgeType.MEMBER_OF, EdgeType.OWNS,
 }
@@ -46,7 +46,7 @@ _SINK_KINDS = {NodeKind.KEY_VAULT, NodeKind.STORAGE, NodeKind.AKS,
 # not the principal's single highest-impact *unrelated* capability. Left unconstrained, the
 # search surfaced whatever reached a Tier-0 user (usually an Entra password-reset), so a Key
 # Vault finding showed a password-reset, an Azure-RBAC finding showed an Entra move, and so
-# on - the path contradicted the description.
+# on, the path contradicted the description.
 #
 # The anchor is DECLARED PER RULE (`_RULE_ATTACK_EDGES`), because the rule is the only thing
 # that knows which capability it detected. A finding's *category* is NOT a reliable proxy:
@@ -63,7 +63,7 @@ _SINK_KINDS = {NodeKind.KEY_VAULT, NodeKind.STORAGE, NodeKind.AKS,
 # plane-consistent, and a principal holding both an in-class and a bigger out-of-class
 # capability must anchor to the in-class one.
 #
-# Azure control/data-plane edges - what an Azure RBAC role (Owner/Contributor/UAA/resource
+# Azure control/data-plane edges, what an Azure RBAC role (Owner/Contributor/UAA/resource
 # role) actually grants. EXCLUDES the Entra-identity edges (password reset, Entra role grant,
 # app-secret add, PIM eligibility), which come from a *separate* Entra role a principal may
 # also hold, not from the Azure grant the finding is about.
@@ -72,7 +72,7 @@ _AZURE_PLANE_EDGES: "set[EdgeType]" = {
     EdgeType.CAN_READ_STORAGE_BLOB, EdgeType.CAN_STEAL_MANAGED_IDENTITY,
     EdgeType.CAN_EXEC_AKS, EdgeType.CAN_PUSH_CONTAINER,
 }
-# Entra identity-plane edges - the moves an Entra role / app permission / group control
+# Entra identity-plane edges, the moves an Entra role / app permission / group control
 # grants. The mirror of the Azure plane; the two never belong on the same finding's anchor.
 _ENTRA_PLANE_EDGES: "set[EdgeType]" = {
     EdgeType.CAN_GRANT_ROLE, EdgeType.CAN_GRANT_APP_ROLE, EdgeType.CAN_RESET_PASSWORD,
@@ -86,12 +86,12 @@ _STOR_KEY = {EdgeType.CAN_GET_STORAGE_KEY}
 # Every capability rule declares the escalation edge(s) its finding represents. This is the
 # authoritative anchor (rule id first, category only as an AI fallback).
 _RULE_ATTACK_EDGES: "dict[str, set[EdgeType]]" = {
-    # Azure RBAC - escalate on the Azure plane.
+    # Azure RBAC, escalate on the Azure plane.
     "AZ-RBAC-001": _AZURE_PLANE_EDGES, "AZ-RBAC-002": _AZURE_PLANE_EDGES,
     "AZ-RBAC-003": _AZURE_PLANE_EDGES, "AZ-RBAC-005": _AZURE_PLANE_EDGES,
     "AZ-RBAC-008": _AZURE_PLANE_EDGES, "AZ-RBAC-011": _AZURE_PLANE_EDGES,
     "AZ-RBAC-004": _AZURE_PLANE_EDGES,                     # miscategorised (Guest) but Azure-plane
-    # Compute / managed-identity - the specific run-code / push / steal move.
+    # Compute / managed-identity, the specific run-code / push / steal move.
     "AZ-RBAC-006": {EdgeType.CAN_STEAL_MANAGED_IDENTITY},  # run-command -> IMDS -> steal MI
     "AZ-RBAC-007": {EdgeType.CAN_EXEC_AKS},                # AKS cluster-admin creds
     "AZ-RBAC-009": {EdgeType.CAN_PUSH_CONTAINER},          # push images to a container registry
@@ -102,22 +102,22 @@ _RULE_ATTACK_EDGES: "dict[str, set[EdgeType]]" = {
     # Storage data-plane.
     "AZ-STOR-002": _STOR_KEY, "AZ-STOR-004": _STOR_KEY,
     "AZ-STOR-003": {EdgeType.CAN_READ_STORAGE_BLOB},
-    # Entra - role grant / app-role grant.
+    # Entra, role grant / app-role grant.
     "AZ-APP-001": {EdgeType.CAN_GRANT_ROLE}, "AZ-APP-002": {EdgeType.CAN_GRANT_ROLE},
     "AZ-APP-009": {EdgeType.CAN_GRANT_ROLE}, "AZ-APP-016": {EdgeType.CAN_GRANT_ROLE},
-    # Entra - add credentials to an app (impersonate it).
+    # Entra, add credentials to an app (impersonate it).
     "AZ-APP-003": {EdgeType.CAN_ADD_SECRET}, "AZ-APP-007": {EdgeType.CAN_ADD_SECRET},
-    # Entra - add members to privileged groups.
+    # Entra, add members to privileged groups.
     "AZ-APP-010": {EdgeType.CAN_ADD_MEMBER}, "AZ-APP-011": {EdgeType.CAN_ADD_MEMBER},
     "AZ-GRP-003": {EdgeType.CAN_ADD_MEMBER},
-    # Entra - password reset / PIM eligibility.
+    # Entra, password reset / PIM eligibility.
     "AZ-IDENT-008": {EdgeType.CAN_RESET_PASSWORD}, "AZ-IDENT-009": {EdgeType.CAN_RESET_PASSWORD},
     "AZ-IDENT-010": {EdgeType.ELIGIBLE_FOR_ROLE},
 }
 # AI-generated findings carry no rule id, so they declare their anchor directly: the
 # specialist emits `attack_primitive` (the single first escalation move in its scenario),
 # which maps to the same edge sets the rules use. This is the AI parallel of _RULE_ATTACK_EDGES
-# - the finding's author (here the model) declares the capability, so the path
+#, the finding's author (here the model) declares the capability, so the path
 # matches the description. Critically, an Azure RBAC self-escalation and an Entra role grant
 # are DIFFERENT primitives on different planes, which mitre_technique/category cannot distinguish.
 _PRIMITIVE_ATTACK_EDGES: "dict[str, set[EdgeType]]" = {
@@ -165,7 +165,7 @@ class Analytics:
 
 _SEV_WEIGHTS = {"Critical": 40, "High": 20, "Medium": 8, "Low": 3, "Info": 1}
 
-# Scoring model - rank-decayed severity with exponential mapping.
+# Scoring model, rank-decayed severity with exponential mapping.
 #
 # The previous model was `100 - min(sum(weight x entity_factor), 100)`. Because the
 # sum grows linearly with finding count, it hit the 100 cap on any real tenant: five
@@ -174,10 +174,10 @@ _SEV_WEIGHTS = {"Critical": 40, "High": 20, "Medium": 8, "Low": 3, "Info": 1}
 # by nothing, so there was no feedback loop.
 #
 # This model fixes that in two steps:
-#   1. Rank decay - findings are sorted worst-first and the Nth contributes
+#   1. Rank decay, findings are sorted worst-first and the Nth contributes
 #      weight x DECAY^N. The worst problems dominate, additional findings of the same
 #      kind add progressively less, and the total converges instead of running away.
-#   2. Exponential mapping - score = 100 * exp(-effective / SCALE), which is strictly
+#   2. Exponential mapping, score = 100 * exp(-effective / SCALE), which is strictly
 #      monotonic and never truly bottoms out, so improvement is always visible.
 _RANK_DECAY = 0.75    # each successive finding contributes 75% of the previous rank
 _SCORE_SCALE = 93.0   # calibrated so one Critical ≈ 65 (C) and one High ≈ 81 (B)
@@ -190,7 +190,7 @@ _METHODOLOGY = (
     "affected-entity count). Findings are ranked worst-first and the Nth contributes "
     "75%^N of its weight, so the most severe issues dominate and breadth has "
     "diminishing effect. The score is 100 x exp(-total/93), which stays sensitive at "
-    "every level - fixing findings always moves the number. Best-practice findings and "
+    "every level, fixing findings always moves the number. Best-practice findings and "
     "attack paths (shown in their own tab) are counted but not penalised."
 )
 
@@ -214,12 +214,16 @@ def _score_from_weights(weights: list[float]) -> tuple[int, str]:
     return score, grade
 
 
-def rescore_from_findings(findings: list[dict]) -> dict:
+def rescore_from_findings(findings: list[dict], *, ai_lead_confidence: int = 50) -> dict:
     """Recompute posture score from a list of finding dicts (post-AI, final result).
 
     Returns a dict with the same keys as PostureScore so it can replace result["score"]
-    after AI findings are merged in.
+    after AI findings are merged in. Excludes the same findings the badges hide, so the grade is
+    explainable from the numbers on screen: attack-path rows (shown in their own tab) and
+    low-confidence / lead-tier AI findings (shown under their own "Leads" chip, unverified
+    hypotheses that must not drive the grade).
     """
+    from . import report as _report
     counts: dict[str, int] = {s: 0 for s in _SEV_WEIGHTS}
     weights: list[float] = []
     for f in findings:
@@ -229,6 +233,9 @@ def rescore_from_findings(findings: list[dict]) -> dict:
         # for findings the badges deliberately hide made the grade unexplainable from
         # the numbers on screen.
         if f.get("source") == "path_consolidation":
+            continue
+        # AI leads are unverified: excluded from counts AND the grade, exactly as the badges do.
+        if _report.is_ai_lead(f, ai_lead_confidence):
             continue
         if sev in counts:
             counts[sev] += 1
@@ -344,13 +351,13 @@ def _impact_score(g: Graph, nid: str, blast: "dict[str, int]") -> int:
         base = 1000
     elif "tier0" in n.tags:
         base = 500
-    elif "tier0_eligible" in n.tags:   # PIM shadow admin - one self-activation from Tier-0
+    elif "tier0_eligible" in n.tags:   # PIM shadow admin, one self-activation from Tier-0
         base = 450
     elif n.tags & {"privileged", "dangerous_app_role"}:
         base = 200
     elif n.kind in (NodeKind.MANAGEMENT_GROUP, NodeKind.SUBSCRIPTION):
         # Owner/UAA on a subscription or management group is control of an entire cloud
-        # scope - every resource within it (Key Vaults, storage, compute). A real attack
+        # scope, every resource within it (Key Vaults, storage, compute). A real attack
         # objective, so a "principal holds Owner on subscription X" finding shows the path
         # to X instead of a bare single node. Scored above a single data sink and below a
         # privileged identity, keeping the tool's identity-first ranking (the breadth of the
@@ -366,7 +373,7 @@ def _impact_score(g: Graph, nid: str, blast: "dict[str, int]") -> int:
     # Blast radius is a TIE-BREAKER within a tier, never a tier-jumper: a Tier-0 target
     # must always outrank a merely-privileged one no matter how broad the latter's reach.
     # The smallest gap between tiers is 50 (Tier-0 500 vs Tier-0-eligible 450), so the
-    # blast contribution is capped below it - otherwise a broad non-Tier-0 group could
+    # blast contribution is capped below it, otherwise a broad non-Tier-0 group could
     # outscore a directly reachable Tier-0 admin and falsely report reaches_tier0=False.
     return base + min(blast.get(nid, 0), 49)
 
@@ -391,8 +398,8 @@ def _node_brief(g: Graph, nid: str) -> dict:
 
 
 def _steal_via_resource(g: Graph, src: str, dst: str) -> "tuple[dict, str] | None":
-    """For a managed-identity-theft edge src->dst, return (resource_brief, how) - the
-    compute resource whose identity is stolen and the mechanism - so a path can show the
+    """For a managed-identity-theft edge src->dst, return (resource_brief, how), the
+    compute resource whose identity is stolen and the mechanism, so a path can show the
     VM/app the code runs on. None when the edge isn't a steal edge or the resource is
     unresolved."""
     for e in g.out_edges(src, EdgeType.CAN_STEAL_MANAGED_IDENTITY):
@@ -473,12 +480,12 @@ def _best_path_from(g: Graph, start: str, adj: "dict[str, list[tuple[str, str]]]
 
 
 def _object_entity_anchor(g: Graph, f: dict) -> "set[EdgeType] | None":
-    """Derive a finding's anchor from its OWN structure - no text, no declaration.
+    """Derive a finding's anchor from its OWN structure, no text, no declaration.
 
     Most findings list BOTH the actors and the objects they attack (e.g. "8 engineers can
     add credentials to these 13 service principals" carries the 8 users AND the SPs). The
     objects are the entities that RECEIVE an escalation edge from another entity in the
-    finding but never SEND one - the "victims". The edge type(s) reaching those objects are
+    finding but never SEND one, the "victims". The edge type(s) reaching those objects are
     the finding's literal attack, so we anchor to them. This is the single most reliable
     signal because it is read straight off the finding's own entities and the real graph,
     and it needs nothing from the AI or a keyword list. Returns None when the finding does
@@ -491,7 +498,7 @@ def _object_entity_anchor(g: Graph, f: dict) -> "set[EdgeType] | None":
     recv: dict[str, set[EdgeType]] = {}
     for src in ids:
         for e in g.out_edges(src):
-            # Anchor only on ABUSE edges - a MemberOf/Owns relationship between two of the
+            # Anchor only on ABUSE edges, a MemberOf/Owns relationship between two of the
             # finding's entities is not the finding's attack primitive.
             if e.type in _ABUSE_EDGES and e.dst in ids and e.dst != src:
                 sends.add(src)
@@ -535,7 +542,7 @@ def _subject_principal_ids(g: Graph, f: dict) -> list[str]:
     removed so they can never become the path's entry.
 
     A finding often lists helper principals only to explain what they can do TO the subject
-    ("Dileesh can reset Aaron Drake's password"). Those helpers carry their own, often
+    ("Jordan can reset Alex Carter's password"). Those helpers carry their own, often
     higher-impact, edges, and the max-impact search would otherwise anchor the path on THEM,
     showing an attack that has nothing to do with the finding (the recurring "path shows a
     different person doing a different thing" bug).
@@ -546,7 +553,7 @@ def _subject_principal_ids(g: Graph, f: dict) -> list[str]:
       2. A structural fallback when the AI did not tag: a principal is context when its
          role_in_finding names ANOTHER principal in the finding (the subject's role describes
          its OWN standing; a helper's role describes what it can do to the subject).
-    Never returns empty - falls back to all principals when it cannot separate them, and
+    Never returns empty, falls back to all principals when it cannot separate them, and
     always keeps the non-principal nodes (resources/roles) for single-node plots."""
     ordered = _finding_principal_ids(g, f)
     ppl = [nid for nid in ordered if g.node(nid) and g.node(nid).kind in _PRINCIPAL_KINDS]
@@ -592,7 +599,7 @@ def compute_max_impact_paths(g: Graph, findings: "list[dict]",
     Cross-subscription blast radius is woven in as a lens: every finding also carries the
     number and names of subscriptions its principals can reach over the full escalation
     graph (`subscription_reach`/`subscription_reach_count`), so a report can amplify a
-    finding that crosses subscription boundaries wherever it appears - never as a separate
+    finding that crosses subscription boundaries wherever it appears, never as a separate
     menu."""
     if blast is None:
         blast = {p.id: len(_reachable_privileged(g, p.id))
@@ -625,7 +632,7 @@ def compute_max_impact_paths(g: Graph, findings: "list[dict]",
             seeds = _PRIMITIVE_ATTACK_EDGES[prim]
         else:
             # For every other finding, derive the anchor from the finding's OWN structure
-            # first (the edge reaching its object entities - the literal actor->object
+            # first (the edge reaching its object entities, the literal actor->object
             # attack), then the AI's declared primitive, then a coarse category plane for
             # AI findings only. Exposure rules with no object entities -> worst-reach.
             seeds = (_object_entity_anchor(g, f)
@@ -640,7 +647,7 @@ def compute_max_impact_paths(g: Graph, findings: "list[dict]",
 
         def _anchored(seed_set):
             b = None
-            for eid in entries:  # noqa: B023 - defined and called within this iteration only, never deferred
+            for eid in entries:  # noqa: B023, defined and called within this iteration only, never deferred
                 first = [(d, p) for (d, p, t) in typed_adj.get(eid, []) if t in seed_set]
                 if not first:
                     continue
@@ -655,7 +662,7 @@ def compute_max_impact_paths(g: Graph, findings: "list[dict]",
         if seeds:
             best = _anchored(seeds)
             # Declared anchor found no real path: anchor on what the SUBJECTS can actually
-            # do (their own abuse edges) rather than forcing a wrong/empty path - but never
+            # do (their own abuse edges) rather than forcing a wrong/empty path, but never
             # on another principal's capability, since `entries` is already the subjects.
             if best is None and ai_anchored:
                 own = {t for eid in entries for (_, _, t) in typed_adj.get(eid, []) if t in _ABUSE_EDGES}
@@ -672,7 +679,7 @@ def compute_max_impact_paths(g: Graph, findings: "list[dict]",
                 cand = None if anchored_intent else _best_path_from(g, eid, adj, blast)
                 if cand is None:
                     # No onward escalation (or an anchored finding whose capability isn't a
-                    # first move here) - the node itself is the objective.
+                    # first move here), the node itself is the objective.
                     cand = {
                         "entry": _node_brief(g, eid), "target": _node_brief(g, eid),
                         "hops": [], "length": 0,
@@ -695,7 +702,7 @@ def compute_max_impact_paths(g: Graph, findings: "list[dict]",
         # The tenant-wide max-impact MAP is a list of escalation PATHS, so it only holds
         # entries that actually move (entry != target, length >= 1). A length-0 fallback
         # means the principal is already its own objective (a Tier-0 admin, or a resource
-        # sink with no onward escalation) - real as per-finding context on f, but shown in
+        # sink with no onward escalation), real as per-finding context on f, but shown in
         # the map it reads as "entry point and objective are the same" for many rows. Keep
         # it on the finding; leave it out of the map.
         if best["length"] > 0 and best["entry"]["id"] != best["target"]["id"]:
@@ -796,7 +803,7 @@ def _subscription_resolver(g: Graph):
 
 def compute_subscription_reach(g: Graph, scope_subs=None) -> "dict[str, set[str]]":
     """Per-node set of subscription ids reachable by compromising that node, computed
-    over the FULL escalation graph - the way an attacker actually crosses subscription
+    over the FULL escalation graph, the way an attacker actually crosses subscription
     boundaries.
 
     Cross-subscription reach is NOT just the RBAC a node holds directly. A user who is a
@@ -858,12 +865,12 @@ def compute_subscription_reach(g: Graph, scope_subs=None) -> "dict[str, set[str]
 
 
 def _footprint_subscription_reach(g: Graph, scope_subs) -> "dict[str, set[str]]":
-    """Per-node subscriptions of STANDING access - RBAC held directly plus RBAC inherited
+    """Per-node subscriptions of STANDING access, RBAC held directly plus RBAC inherited
     through group membership or ownership. Unlike compute_subscription_reach it deliberately
     does NOT follow escalation primitives (CanResetPassword, CanAddSecret, CanGrantRole,
     PIM self-activation, managed-identity theft): those are attack PATHS to another
     principal's access, not the node's own cross-subscription footprint. A cross-sub bridge
-    is about standing reach - 'I already hold access in these subscriptions' - so it is
+    is about standing reach, 'I already hold access in these subscriptions', so it is
     built on this, which keeps escalation-only reach (e.g. an SP that can add a secret to a
     tier-0 SP) out of the bridge list, where it belongs to Attack Paths instead."""
     direct: dict[str, set[str]] = {}
@@ -901,8 +908,8 @@ def compute_cross_subscription(g: Graph, blast: "dict[str, int]",
                                reach: "dict[str, set[str]] | None" = None) -> dict:
     """Map the tenant's cross-subscription attack surface.
 
-    A *bridge* is a principal with STANDING access to two or more subscriptions - held
-    directly, or inherited through group membership or ownership - so compromising it
+    A *bridge* is a principal with STANDING access to two or more subscriptions, held
+    directly, or inherited through group membership or ownership, so compromising it
     directly touches every subscription in its footprint. Footprint reach (not the full
     escalation reach) defines a bridge: an SP that can only *escalate* to an admin who
     spans 41 subscriptions is an attack path, not a bridge, and belongs in Attack Paths.
@@ -956,7 +963,7 @@ def compute_cross_subscription(g: Graph, blast: "dict[str, int]",
     # Groups that hold cross-subscription RBAC DIRECTLY confer that reach to every member,
     # so each member shows up in `per` as its own bridge. Listing all of them (228 of 708
     # rows on real data) is noise that repeats one mechanism per member and buries the
-    # actionable target - the group. Collapse a member whose cross-subscription reach is
+    # actionable target, the group. Collapse a member whose cross-subscription reach is
     # FULLY explained by the bridging group(s) it belongs to into that group (counted, not
     # listed); keep principals that hold cross-sub RBAC themselves or that bridge by
     # combining grants no single group provides.
@@ -1022,7 +1029,7 @@ def compute_cross_subscription(g: Graph, blast: "dict[str, int]",
     # then widest span / blast / most members.
     def _btype(b):
         if b["member_count"] is not None:
-            return 0                       # group - the conferring mechanism
+            return 0                       # group, the conferring mechanism
         if not b["indirect"]:
             return 1                       # holds cross-sub RBAC directly
         return 2                           # combines grants from several sources
@@ -1074,8 +1081,8 @@ def compute_attack_paths(g: Graph, *, max_depth: int = 8, max_total: int = 800,
     Global Admin's password), the per-entry limit counts DISTINCT TARGETS rather than
     raw paths (so an entry reaching ten targets is not cut off after six paths to
     two), genuinely distinct routes to the same (entry,target) are preserved
-    (`route_count` + `alt_paths`), and `truncated` is set whenever ANY bound - depth,
-    per-entry, or the global cap - actually drops a branch. Hard visit/total budgets
+    (`route_count` + `alt_paths`), and `truncated` is set whenever ANY bound, depth,
+    per-entry, or the global cap, actually drops a branch. Hard visit/total budgets
     keep it bounded on very large tenants; hitting them sets `truncated`."""
     adj: dict[str, list[tuple[str, str]]] = {}
     for e in g.edges():
@@ -1125,7 +1132,7 @@ def compute_attack_paths(g: Graph, *, max_depth: int = 8, max_total: int = 800,
                     # pop). A single node can fan out to hundreds of sink targets
                     # (CanReachKVSecret → every vault); checking only at the top of the
                     # while-loop let the first entry blow the whole global budget in one
-                    # pop and starved every other entry - so all paths came from one
+                    # pop and starved every other entry, so all paths came from one
                     # principal and distinct escalation entries (e.g. the IDP chain)
                     # never appeared. Stop this entry once it has its quota of targets
                     # and move to the next, so the budget spreads across many entries.
@@ -1155,7 +1162,7 @@ def compute_attack_paths(g: Graph, *, max_depth: int = 8, max_total: int = 800,
                     else:
                         extra_routes[key] = extra_routes.get(key, 0) + 1
                         targets_here.add(dst)
-                # Keep expanding past a target too - respect the depth cap, and be
+                # Keep expanding past a target too, respect the depth cap, and be
                 # honest when it cuts a branch that might have reached further.
                 if depth + 1 <= max_depth:
                     stack.append((dst, nodes + [dst], new_hops))
@@ -1211,7 +1218,7 @@ def compute_attack_graph(g: Graph, analytics: Analytics, *, max_nodes: int = 160
 
     def escore(e) -> int:
         s = 0
-        if _is_priv(e.dst): s += 6          # the edge REACHES privilege - the money edge
+        if _is_priv(e.dst): s += 6          # the edge REACHES privilege, the money edge
         if e.type in _ABUSE: s += 3         # a real abuse primitive, not plumbing
         if e.src in entry_ids: s += 2       # from a non-privileged entry point
         if e.dst in tier0_ids: s += 2
@@ -1221,7 +1228,7 @@ def compute_attack_graph(g: Graph, analytics: Analytics, *, max_nodes: int = 160
     edges.sort(key=escore, reverse=True)
 
     # Greedily keep the highest-value edges, adding both endpoints, until the node budget
-    # is spent - so every kept edge is fully drawable and the graph stays connected around
+    # is spent, so every kept edge is fully drawable and the graph stays connected around
     # the real attack paths.
     keep: set[str] = set()
     kept_edges = []

@@ -1,6 +1,6 @@
 """Framework coverage: MITRE ATT&CK + Azure Threat Research Matrix (ATRM) tagging.
 
-Every finding - deterministic rule or AI-generated - is stamped with both a MITRE ATT&CK
+Every finding, deterministic rule or AI-generated, is stamped with both a MITRE ATT&CK
 technique and the Microsoft Azure Threat Research Matrix (ATRM) technique it maps to, so the
 report shows both and the tenant's coverage can be rendered as a matrix rather than asserted.
 
@@ -72,7 +72,7 @@ ATTACK_TO_ATRM: dict[str, tuple[str, str, str]] = {
     "T1213":     ("Credential Access", "AZT605.3", "Resource Secret Reveal: RG Deployment History"),
     "T1190":     ("Reconnaissance", "AZT103",   "Public Accessible Resource"),
     "T1562.008": ("Persistence",    "AZT508",   "Azure Policy"),
-    # ATT&CK-only (no clean ATRM analogue - M365 mail / transport-layer posture).
+    # ATT&CK-only (no clean ATRM analogue, M365 mail / transport-layer posture).
     "T1114.002": ("", "", ""),
     "T1040":     ("", "", ""),
 }
@@ -118,8 +118,8 @@ ATTACK_TO_ATRM.update({
     # ATRM analogues where Azure has a clean one; the rest stay ATT&CK-only (blank id).
     "T1548":     ("Privilege Escalation", "AZT402", "Elevated Access Toggle"),
     "T1195.002": ("Execution", "AZT301.4", "VM Scripting: Compute Gallery Application"),
-    "T1550.001": ("", "", ""),   # app access-token reuse - no clean ATRM analogue
-    "T1087.004": ("", "", ""),   # cloud account discovery - Discovery, ATT&CK-only
+    "T1550.001": ("", "", ""),   # app access-token reuse, no clean ATRM analogue
+    "T1087.004": ("", "", ""),   # cloud account discovery, Discovery, ATT&CK-only
     "T1114":     ("", "", ""),
     "T1485":     ("Impact", "AZT703", "Replication"),
 })
@@ -177,7 +177,7 @@ def _category_attack_fallback(finding: dict) -> str:
     for keys, tech in _CATEGORY_ATTACK_FALLBACK:
         if any(k in hay for k in keys):
             return tech
-    return "T1078.004"   # broadest cloud-identity technique - never leave a finding untagged
+    return "T1078.004"   # broadest cloud-identity technique, never leave a finding untagged
 
 
 def attack_for(rule_id: str | None, existing_attack: str = "",
@@ -193,7 +193,7 @@ def attack_for(rule_id: str | None, existing_attack: str = "",
 
 
 def atrm_for(rule_id: str | None, attack: str) -> tuple[str, str, str] | None:
-    """Resolve the ATRM (tactic, id, name) for a finding - per-rule override first, then the
+    """Resolve the ATRM (tactic, id, name) for a finding, per-rule override first, then the
     ATT&CK-to-ATRM map. Returns None when there is no meaningful Azure technique."""
     if rule_id and rule_id in RULE_ATRM_OVERRIDE:
         return RULE_ATRM_OVERRIDE[rule_id]
@@ -223,7 +223,7 @@ def enrich_frameworks(finding: dict) -> dict:
         label = ATTACK_NAME.get(attack)
         fw["MITRE ATT&CK"] = f"{attack} {label}" if (label and label not in attack) else attack
         # Store the CANONICAL id (not the AI's "T#### (name)" form) so coverage rollups group
-        # correctly - overwrite, since a malformed value is worse than useful here.
+        # correctly, overwrite, since a malformed value is worse than useful here.
         finding["mitre_technique"] = attack
     atrm = atrm_for(rule_id, attack)
     if atrm:

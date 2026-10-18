@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostureHound - one-time setup: create a virtual environment and install deps.
+# PostureHound — one-time setup: create a virtual environment and install deps.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -60,7 +60,7 @@ install_pdf_libs() {
          libffi-dev libcairo2 >/dev/null 2>&1 || true
   fi
   if ! ./.venv/bin/python -c "import weasyprint" >/dev/null 2>&1; then
-    echo "[PostureHound] Note: PDF libraries not installed. The report still works -"
+    echo "[PostureHound] Note: PDF libraries not installed. The report still works —"
     echo "[PostureHound]   the Export button will serve a printable HTML page instead."
     echo "[PostureHound]   To enable direct PDF export: 'brew install pango' (macOS) or the"
     echo "[PostureHound]   distro equivalent, then re-run ./setup.sh."

@@ -1,9 +1,9 @@
-"""Live Microsoft Graph directory collector - an AzureHound-equivalent (PostureHound v2, Track B).
+"""Live Microsoft Graph directory collector, an AzureHound-equivalent (PostureHound v2, Track B).
 
 AzureHound collects the Entra ID (Azure AD) directory graph and PostureHound ingests
 its `.zip`/`.json`. This module collects that SAME graph LIVE from Microsoft Graph
 using the read-only service principal, and emits records in AzureHound's exact
-`{kind, data}` shape - so the existing ingest -> normalize -> derive -> rules pipeline
+`{kind, data}` shape, so the existing ingest -> normalize -> derive -> rules pipeline
 consumes it with zero changes. A tenant can then be assessed from one read-only SP,
 with no separate AzureHound run.
 
@@ -15,12 +15,12 @@ the relationship records (members, owners, grants) are reshaped into AzureHound'
 form. Field mappings are pinned to the kinds normalize.CONSUMED_KINDS understands.
 
 Permission: this needs Microsoft Graph **Directory.Read.All** (application, admin-
-consented) - the same read scope AzureHound uses - in addition to the Policy.Read.All
+consented), the same read scope AzureHound uses, in addition to the Policy.Read.All
 that azure_graph already uses. For full PIM coverage it also uses (each independently,
 degrading gracefully with a 403 recorded in errors if absent):
 **RoleManagement.Read.Directory** (role assignments/definitions),
-**RoleEligibilitySchedule.Read.Directory** (PIM *eligible* assignments - shadow admins), and
-**RoleManagementPolicy.Read.Directory** (PIM *activation* policies - MFA/approval/duration).
+**RoleEligibilitySchedule.Read.Directory** (PIM *eligible* assignments, shadow admins), and
+**RoleManagementPolicy.Read.Directory** (PIM *activation* policies, MFA/approval/duration).
 It never writes.
 
 Same contract as the other collectors: injectable HTTP (tested with httpx.MockTransport),
@@ -44,8 +44,9 @@ _ARM_MG = f"{_ARM}/providers/Microsoft.Management/managementGroups"
 _MG_API = "2020-05-01"
 _ROLE_API = "2022-04-01"
 _SUBS_API = "2020-01-01"
+_CLASSIC_ADMIN_API = "2015-07-01"
 
-# $select projections - keep payloads small but carry every field normalize/derive read.
+# $select projections, keep payloads small but carry every field normalize/derive read.
 _SEL = {
     "users": "id,displayName,userPrincipalName,mail,userType,accountEnabled,"
              "onPremisesSyncEnabled,jobTitle,createdDateTime",
@@ -67,7 +68,7 @@ _BATCH_MAX = 20   # Microsoft Graph caps a $batch at 20 sub-requests
 
 def _batch_get(token: str, client, reqs, *, errors=None, what="") -> dict:
     """Run many GET requests via Microsoft Graph $batch (20 per call) instead of one
-    round-trip each - the difference between a 45-minute and a few-minute collection on
+    round-trip each, the difference between a 45-minute and a few-minute collection on
     a large tenant.
 
     `reqs` is a list of (key, rel_url); rel_url is RELATIVE to the Graph version root,
@@ -86,7 +87,7 @@ def _batch_get(token: str, client, reqs, *, errors=None, what="") -> dict:
         try:
             resp = _send_with_retry(lambda body=body: client.post(f"{_GRAPH}/$batch", json=body, headers=headers))
             payload = resp.json()
-        except Exception as e:  # noqa: BLE001 - whole batch failed; record and continue
+        except Exception as e:  # noqa: BLE001, whole batch failed; record and continue
             if errors is not None:
                 errors.append(f"{what} $batch: {e}")
             continue
@@ -134,7 +135,7 @@ def collect_directory(creds: "ArgCredentials | None" = None, *, client=None,
     def _all(url: str, what: str) -> list[dict]:
         try:
             return _get_all(token, url, client)
-        except Exception as e:  # noqa: BLE001 - surface, never crash the scan
+        except Exception as e:  # noqa: BLE001, surface, never crash the scan
             errors.append(f"{what}: {e}")
             return []
 
@@ -248,7 +249,7 @@ def collect_directory(creds: "ArgCredentials | None" = None, *, client=None,
                                         for m in members]}))
         _log(f"[Dir] {len(roles)} activated directory role(s).")
 
-        # ---- PIM-eligible (not-yet-active) directory roles - shadow admins ----
+        # ---- PIM-eligible (not-yet-active) directory roles, shadow admins ----
         elig = _all(
             f"{_GRAPH}/roleManagement/directory/roleEligibilityScheduleInstances"
             f"?$select=principalId,roleDefinitionId,directoryScopeId&$top=999",
@@ -340,7 +341,7 @@ def _arm_get_all(token: str, url: str, client) -> list[dict]:
 
 
 def _arm_get_one(token: str, url: str, client) -> dict:
-    """GET a single ARM object (throttling-aware). {} on any error - never raises."""
+    """GET a single ARM object (throttling-aware). {} on any error, never raises."""
     try:
         resp = _send_with_retry(lambda: client.get(
             url, headers={"Authorization": f"Bearer {token}"}))
@@ -366,7 +367,7 @@ def collect_arm(creds: "ArgCredentials | None" = None, *, client=None,
 
     This is the rm.json half AzureHound produces: subscriptions, management groups
     and their hierarchy, and every Azure RBAC role assignment across management-group,
-    subscription, resource-group and resource scope - the Owner/Contributor/User
+    subscription, resource-group and resource scope, the Owner/Contributor/User
     Access Administrator reach that drives cross-subscription blast radius.
 
     Role assignments are read per subscription (the whole subtree, including
@@ -408,9 +409,33 @@ def collect_arm(creds: "ArgCredentials | None" = None, *, client=None,
             if not sid or state not in ("", "enabled"):
                 continue
             sub_ids.append(sid)
-            records.append(_rec("AZSubscription", {
+            sub_data = {
                 "id": f"/subscriptions/{sid}", "subscriptionId": sid,
-                "displayName": s.get("displayName")}))
+                "displayName": s.get("displayName")}
+            # Classic (co-)administrators: a legacy, audit-poor path to full subscription
+            # control that bypasses Azure RBAC. Attach them to the subscription so AZ-RBAC-017
+            # can assess it. Set the key even when empty (a successful query that found none is
+            # an honest pass); leave it UNSET on error so the rule reports not-assessed, never a
+            # false clean. The API is being retired, so a 404/400 is expected on many tenants.
+            try:
+                admins = _arm_get_all(
+                    token, f"{_ARM}/subscriptions/{sid}/providers/Microsoft.Authorization/"
+                    f"classicAdministrators?api-version={_CLASSIC_ADMIN_API}", client)
+                sub_data["classicAdministrators"] = [
+                    {"emailAddress": (a.get("properties") or {}).get("emailAddress"),
+                     "role": (a.get("properties") or {}).get("role")}
+                    for a in admins]
+            except Exception as e:  # noqa: BLE001, best-effort
+                # The classic deployment model is retired: modern subscriptions return 404 for the
+                # classicAdministrators provider, which means there are simply no classic admins.
+                # Treat that as an assessed-clean empty list (not an error, not "not assessed");
+                # only a genuine failure (auth, throttling, 5xx) leaves the key unset + logs.
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if status == 404:
+                    sub_data["classicAdministrators"] = []
+                else:
+                    errors.append(f"sub {sid} classicAdministrators: {e}")
+            records.append(_rec("AZSubscription", sub_data))
         _log(f"[ARM] {len(sub_ids)} subscription(s).")
 
         # ---- Management groups + hierarchy ------------------------------------
@@ -490,7 +515,7 @@ def collect_live(creds: "ArgCredentials | None" = None, *, client=None,
 
     It also collects the individual RESOURCE objects (VMs, Key Vaults, storage accounts,
     AKS, ACR, automation/function/logic/web apps, VMSS) with their managed identities, Key
-    Vault access policies and security config, via Azure Resource Graph - so resource-scoped
+    Vault access policies and security config, via Azure Resource Graph, so resource-scoped
     RBAC resolves to real resource nodes and the resource-plane abuse edges (managed-identity
     theft, Key Vault data-plane reach, storage-key / blob / ACR-push / AKS-exec) are derived
     the same as from an AzureHound rm.json. A live SP collection is therefore full-coverage
@@ -508,12 +533,12 @@ def collect_live(creds: "ArgCredentials | None" = None, *, client=None,
     if arm:
         records += arm[0]
         errors += arm[1]
-    # Individual resource objects (Resource Graph) - the managed identities, Key Vault
+    # Individual resource objects (Resource Graph), the managed identities, Key Vault
     # access policies and config that power the resource-plane abuse edges.
     from . import azure_arg
     try:
         records += azure_arg.collect_resource_objects(creds, client=client, on_progress=on_progress)
-    except Exception as e:  # noqa: BLE001 - best-effort; never fail the whole collection
+    except Exception as e:  # noqa: BLE001, best-effort; never fail the whole collection
         errors.append(f"resource-object collection failed: {e}")
     return records, errors
 
@@ -534,7 +559,7 @@ def to_collection_bytes(records: list[dict], *, meta: dict | None = None) -> byt
 
 def probe(creds: "ArgCredentials | None" = None, *, client=None) -> dict:
     """Validate the SP's Directory.Read.All: authenticate and read one user page.
-    Returns {ok, message} - never raises. Directory.Read.All is a DIFFERENT grant
+    Returns {ok, message}, never raises. Directory.Read.All is a DIFFERENT grant
     from Policy.Read.All, so it is checked separately."""
     creds = creds or credentials_from_settings()
     if creds is None:
@@ -549,9 +574,9 @@ def probe(creds: "ArgCredentials | None" = None, *, client=None) -> dict:
         try:
             users = _get_all(token, f"{_GRAPH}/users?$select=id&$top=1", client)
         except Exception as e:  # noqa: BLE001
-            return {"ok": False, "message": "Authenticated, but reading the directory failed - "
+            return {"ok": False, "message": "Authenticated, but reading the directory failed, "
                     f"grant the SP Directory.Read.All and admin-consent it ({e})"}
-        return {"ok": True, "message": f"Directory readable - {len(users)} user(s) on the first page."}
+        return {"ok": True, "message": f"Directory readable, {len(users)} user(s) on the first page."}
     finally:
         if owns:
             try:

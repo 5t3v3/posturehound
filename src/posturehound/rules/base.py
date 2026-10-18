@@ -119,7 +119,7 @@ def run_rules(g: Graph) -> AssessmentResult:
                 "needs": [k.value for k in r.data_source],
             })
             continue
-        # The relationship data this rule reads was never collected - its silence is
+        # The relationship data this rule reads was never collected, its silence is
         # "not assessed", never a clean pass.
         if r.requires_records and by_kind and not (set(r.requires_records) & by_kind):
             not_assessed.append({
@@ -130,7 +130,7 @@ def run_rules(g: Graph) -> AssessmentResult:
             })
             continue
         # The node kind is present but the specific property this rule reads was
-        # never collected - silence is "not assessed", not a clean pass.
+        # never collected, silence is "not assessed", not a clean pass.
         if r.requires_props and not _any_node_has_prop(g, r.data_source, r.requires_props):
             not_assessed.append({
                 "rule_id": r.id, "title": r.title,

@@ -3,7 +3,7 @@
 Scan results are stored as JSON files under a data directory so the History and
 Dashboard pages survive restarts. Non-secret settings (default AI toggle, minimum
 severity) are persisted too. The Anthropic API key is deliberately NOT written to
-disk - it is held in process memory for the server's lifetime, set from the
+disk, it is held in process memory for the server's lifetime, set from the
 Settings page, so a plaintext key never lands on disk.
 """
 from __future__ import annotations
@@ -27,10 +27,14 @@ _DEFAULT_SETTINGS = {"ai_default": False, "min_severity": "Info",
                      "sonnet_model": "claude-sonnet-5",
                      "opus_model": "claude-opus-5",
                      "haiku_model": "claude-sonnet-5",
+                     # Accuracy gate: AI findings below this (effective) confidence, and all
+                     # 'lead'-tier AI findings, are shown under the separate "Leads" view instead
+                     # of the main findings list. 0-100; deterministic findings are never gated.
+                     "ai_lead_confidence": 50,
                      # Verbose per-scan AI trace (how each specialist thought), written live
                      # to ~/.posturehound/scan_traces/. On by default; a local artifact.
                      "ai_trace_enabled": True,
-                     # Azure Resource Graph collector (v2 Track B) - a read-only
+                     # Azure Resource Graph collector (v2 Track B), a read-only
                      # Reader/Security-Reader service principal. The secret prefers
                      # PH_ARG_CLIENT_SECRET so it need not be persisted here.
                      "arg_tenant_id": "", "arg_client_id": "", "arg_client_secret": "",
@@ -67,7 +71,7 @@ def _ensure() -> None:
 # The Claude 5 models reject temperature/top_p/top_k, so there is no API-level way to
 # make the analyst pipeline reproducible: the same collection scanned twice produced
 # 63-73 findings. Caching the analysis against a hash of the EXACT model input makes
-# the tool deterministic even though the model is not - a repeat scan of unchanged data
+# the tool deterministic even though the model is not, a repeat scan of unchanged data
 # returns byte-identical AI findings instead of re-sampling.
 AI_CACHE_DIR = DATA_DIR / "ai_cache"
 
@@ -86,7 +90,7 @@ def ai_cache_put(key: str, payload: dict) -> bool:
     """Store an analysis. Returns False and records why on failure.
 
     `default=str` matters: the payload carries sets and dataclass-ish values, and a
-    bare json.dump raised TypeError which the original except-clause swallowed - so the
+    bare json.dump raised TypeError which the original except-clause swallowed, so the
     cache silently never wrote anything and reproducibility silently never happened.
     """
     try:
@@ -117,7 +121,7 @@ def ai_cache_put(key: str, payload: dict) -> bool:
 # is seen its human-readable text is stored; every later run that produces the same
 # finding overlays that stored text, so recurring findings read identically even when
 # the surrounding scan changed. Structural fields (entities, severity, paths, BH) are
-# never pinned - only the prose.
+# never pinned, only the prose.
 NARRATIVE_DIR = DATA_DIR / "narrative_cache"
 
 
@@ -206,7 +210,7 @@ def save_settings(patch: dict[str, Any]) -> dict[str, Any]:
 # The one account lives in auth.json (mode 0600): username, PBKDF2 password hash, the JWT
 # signing secret, and a must_change flag set while the default password is still in place.
 # The password hash and secret are NEVER returned by any API (see _safe_settings).
-from . import auth as _auth  # noqa: E402  (auth.py has no store dependency - no cycle)
+from . import auth as _auth  # noqa: E402  (auth.py has no store dependency, no cycle)
 
 AUTH_FILE = DATA_DIR / "auth.json"
 _AUTH_LOCK = threading.Lock()
@@ -241,21 +245,70 @@ def _save_auth(d: dict) -> None:
         raise
 
 
+# ── RBAC: permission catalog + built-in roles ──────────────────────────────────
+# A permission key gates one screen/feature. The SPA hides what a user's role lacks and the API
+# refuses it. "*" (held only by Administrator) is every permission, including future ones.
+PERMISSIONS: list[tuple[str, str]] = [
+    ("dashboard",  "Dashboard"),
+    ("findings",   "Findings & reports"),
+    ("scan",       "Run scans & live collection"),
+    ("history",    "Scan history & comparison"),
+    ("graph",      "Attack graph explorer"),
+    ("rules",      "Rule library"),
+    ("compliance", "Compliance (CIS)"),
+    ("traces",     "AI reasoning traces"),
+    ("ado",        "Create Azure DevOps work items"),
+    ("settings",   "Manage tool settings & integrations"),
+    ("users",      "Manage users & roles"),
+]
+PERMISSION_KEYS: list[str] = [k for k, _ in PERMISSIONS]
+
+# Built-in roles, seeded on first run and kept present. Administrator is immutable (always "*").
+_DEFAULT_ROLES: dict[str, dict] = {
+    "admin":   {"label": "Administrator", "permissions": ["*"], "builtin": True},
+    "analyst": {"label": "Analyst",
+                "permissions": ["dashboard", "findings", "scan", "history", "graph", "rules",
+                                "compliance", "traces", "ado"], "builtin": True},
+    "viewer":  {"label": "Viewer",
+                "permissions": ["dashboard", "findings", "history", "compliance"], "builtin": True},
+}
+
+
+def permission_catalog() -> list[dict]:
+    return [{"key": k, "label": lbl} for k, lbl in PERMISSIONS]
+
+
+def _migrate_auth(d: dict) -> dict:
+    """Bring an auth record up to the multi-user schema: fold a legacy single account into
+    users{}, and ensure the built-in roles are present. Non-destructive to custom roles/users."""
+    if "users" not in d:
+        users: dict = {}
+        if d.get("username") and d.get("password_hash"):   # legacy single-account record
+            users[str(d["username"])] = {"password_hash": d["password_hash"], "role": "admin",
+                                         "must_change": bool(d.get("must_change"))}
+        d["users"] = users
+    for k in ("username", "password_hash", "must_change"):
+        d.pop(k, None)
+    roles = d.setdefault("roles", {})
+    for rk, rv in _DEFAULT_ROLES.items():
+        if rk not in roles:
+            roles[rk] = dict(rv)
+    roles["admin"] = dict(_DEFAULT_ROLES["admin"])   # Administrator is always all-permissions
+    return d
+
+
 def bootstrap_auth() -> dict:
-    """Ensure the account exists; seed the default admin on first run. Returns the record."""
+    """Ensure the auth store exists: migrate legacy records, seed the default admin user, the
+    built-in roles, and the JWT secret on first run. Returns the record."""
     with _AUTH_LOCK:
-        d = _load_auth()
-        changed = False
-        if not d.get("username") or not d.get("password_hash"):
-            d = {"username": _DEFAULT_ADMIN_USER,
-                 "password_hash": _auth.hash_password(_DEFAULT_ADMIN_PASSWORD),
-                 "must_change": True}
-            changed = True
+        d = _migrate_auth(_load_auth() or {})
+        if not d["users"]:
+            d["users"][_DEFAULT_ADMIN_USER] = {
+                "password_hash": _auth.hash_password(_DEFAULT_ADMIN_PASSWORD),
+                "role": "admin", "must_change": True}
         if not d.get("jwt_secret") and not os.getenv("PH_JWT_SECRET"):
             d["jwt_secret"] = _auth.new_secret()
-            changed = True
-        if changed:
-            _save_auth(d)
+        _save_auth(d)
     return d
 
 
@@ -270,33 +323,158 @@ def jwt_secret() -> str:
     return bootstrap_auth()["jwt_secret"]
 
 
-def get_auth_username() -> str:
-    return _load_auth().get("username") or bootstrap_auth()["username"]
+# ── Users ───────────────────────────────────────────────────────────────────────
+def get_user(username: str) -> "dict | None":
+    return (_load_auth().get("users") or {}).get(username or "")
 
 
-def auth_must_change() -> bool:
-    return bool(_load_auth().get("must_change"))
+def list_users() -> list[dict]:
+    users = (_load_auth() or bootstrap_auth()).get("users") or {}
+    return sorted(({"username": u, "role": v.get("role", "viewer"),
+                    "must_change": bool(v.get("must_change")),
+                    "created_at": v.get("created_at")} for u, v in users.items()),
+                  key=lambda x: x["username"].lower())
 
 
-def verify_credentials(username: str, password: str) -> bool:
-    d = _load_auth() or bootstrap_auth()
-    if (username or "") != (d.get("username") or ""):
-        return False
-    return _auth.verify_password(password or "", d.get("password_hash") or "")
+def verify_credentials(username: str, password: str) -> "dict | None":
+    """Return the user's public record ({username, role, must_change}) on success, else None."""
+    u = get_user(username)
+    if not u or not _auth.verify_password(password or "", u.get("password_hash") or ""):
+        return None
+    return {"username": username, "role": u.get("role", "viewer"),
+            "must_change": bool(u.get("must_change"))}
 
 
-def set_credentials(new_username: str, new_password: str) -> None:
-    """Change username and/or password; clears the must_change (default-password) flag."""
+def auth_must_change(username: str) -> bool:
+    u = get_user(username)
+    return bool(u and u.get("must_change"))
+
+
+def _admin_count(users: dict) -> int:
+    return sum(1 for v in users.values() if v.get("role") == "admin")
+
+
+def create_user(username: str, password: str, role: str) -> None:
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("Username is required.")
+    if not password or len(password) < 8:
+        raise ValueError("Password must be at least 8 characters.")
     with _AUTH_LOCK:
-        d = _load_auth() or {}
-        if new_username:
-            d["username"] = new_username.strip()
-        if new_password:
-            d["password_hash"] = _auth.hash_password(new_password)
-            d["must_change"] = False
-        if not d.get("jwt_secret") and not os.getenv("PH_JWT_SECRET"):
-            d["jwt_secret"] = _auth.new_secret()
+        d = _migrate_auth(_load_auth() or {})
+        if username in d["users"]:
+            raise ValueError(f"User '{username}' already exists.")
+        if role not in d["roles"]:
+            raise ValueError(f"Unknown role '{role}'.")
+        import time as _t
+        d["users"][username] = {"password_hash": _auth.hash_password(password),
+                                "role": role, "must_change": False,
+                                "created_at": int(_t.time())}
         _save_auth(d)
+
+
+def delete_user(username: str) -> None:
+    with _AUTH_LOCK:
+        d = _migrate_auth(_load_auth() or {})
+        u = d["users"].get(username)
+        if not u:
+            raise ValueError(f"User '{username}' not found.")
+        if u.get("role") == "admin" and _admin_count(d["users"]) <= 1:
+            raise ValueError("Cannot delete the last administrator.")
+        del d["users"][username]
+        _save_auth(d)
+
+
+def set_user_role(username: str, role: str) -> None:
+    with _AUTH_LOCK:
+        d = _migrate_auth(_load_auth() or {})
+        u = d["users"].get(username)
+        if not u:
+            raise ValueError(f"User '{username}' not found.")
+        if role not in d["roles"]:
+            raise ValueError(f"Unknown role '{role}'.")
+        if u.get("role") == "admin" and role != "admin" and _admin_count(d["users"]) <= 1:
+            raise ValueError("Cannot demote the last administrator.")
+        u["role"] = role
+        _save_auth(d)
+
+
+def set_user_password(username: str, new_password: str, *, must_change: bool = False) -> None:
+    """Set a user's password (admin reset, or self-service). Clears the default-password flag."""
+    if not new_password or len(new_password) < 8:
+        raise ValueError("Password must be at least 8 characters.")
+    with _AUTH_LOCK:
+        d = _migrate_auth(_load_auth() or {})
+        u = d["users"].get(username)
+        if not u:
+            raise ValueError(f"User '{username}' not found.")
+        u["password_hash"] = _auth.hash_password(new_password)
+        u["must_change"] = bool(must_change)
+        _save_auth(d)
+
+
+# ── Roles ───────────────────────────────────────────────────────────────────────
+def list_roles() -> dict:
+    return (_load_auth() or bootstrap_auth()).get("roles") or {}
+
+
+def _valid_perms(perms: list) -> list[str]:
+    out, seen = [], set()
+    for p in perms or []:
+        p = str(p).strip()
+        if p and p not in seen and (p == "*" or p in PERMISSION_KEYS):
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def save_role(name: str, label: str, permissions: list, *, create: bool) -> None:
+    name = (name or "").strip().lower()
+    if not name or not name.replace("-", "").replace("_", "").isalnum():
+        raise ValueError("Role name must be alphanumeric (dashes/underscores allowed).")
+    with _AUTH_LOCK:
+        d = _migrate_auth(_load_auth() or {})
+        roles = d["roles"]
+        existing = roles.get(name)
+        if create and existing:
+            raise ValueError(f"Role '{name}' already exists.")
+        if not create and not existing:
+            raise ValueError(f"Role '{name}' not found.")
+        if existing and existing.get("builtin"):
+            raise ValueError("Built-in roles cannot be edited.")
+        roles[name] = {"label": (label or name).strip(),
+                       "permissions": _valid_perms(permissions), "builtin": False}
+        _save_auth(d)
+
+
+def delete_role(name: str) -> None:
+    with _AUTH_LOCK:
+        d = _migrate_auth(_load_auth() or {})
+        role = d["roles"].get(name)
+        if not role:
+            raise ValueError(f"Role '{name}' not found.")
+        if role.get("builtin"):
+            raise ValueError("Built-in roles cannot be deleted.")
+        in_use = [u for u, v in d["users"].items() if v.get("role") == name]
+        if in_use:
+            raise ValueError(f"Role '{name}' is assigned to {len(in_use)} user(s); reassign them first.")
+        del d["roles"][name]
+        _save_auth(d)
+
+
+def user_permissions(username: str) -> set:
+    """The resolved permission set for a user (expands the Administrator '*' to every key)."""
+    u = get_user(username)
+    if not u:
+        return set()
+    perms = (list_roles().get(u.get("role", "")) or {}).get("permissions") or []
+    if "*" in perms:
+        return set(PERMISSION_KEYS)
+    return {p for p in perms if p in PERMISSION_KEYS}
+
+
+def has_permission(username: str, perm: str) -> bool:
+    return perm in user_permissions(username)
 
 
 # ---- custom Tier-0 (user-defined high-value targets, PER SCAN) ---
@@ -389,8 +567,8 @@ def clear_custom_tier0(scan_id: str) -> list[str]:
 
 
 # ── User-saved attack-graph queries ────────────────────────────────────────────
-# A saved query is a small, serializable "view descriptor" - {kind, source, target,
-# preset, mode} - that the explorer can replay. Stored globally (like custom Tier-0)
+# A saved query is a small, serializable "view descriptor", {kind, source, target,
+# preset, mode}, that the explorer can replay. Stored globally (like custom Tier-0)
 # so a saved view is available across every scan of the tenant.
 SAVED_QUERIES_FILE = DATA_DIR / "graph_saved_queries.json"
 _SAVEDQ_LOCK = threading.Lock()
@@ -464,17 +642,28 @@ def _attack_path_display_count(result: dict) -> int:
 
 
 def _summary(result: dict, scan_id: str, files: list[str]) -> dict:
+    from . import report as _report
     score = result.get("score", {})
     findings = result.get("findings", [])
+    # Count severities the SAME way the interactive report's badges do: exclude attack-path rows and
+    # AI "leads" (low-confidence / lead-tier AI findings shown under their own chip). Otherwise the
+    # history table and dashboard tiles would show a higher Critical/High count than the report.
+    _lead_thr = get_settings().get("ai_lead_confidence", 50)
     by_sev: dict[str, int] = {}
     for f in findings:
         if f.get("source") == "path_consolidation":
             continue  # counted separately; excluded from critical/high badges
+        if _report.is_ai_lead(f, _lead_thr):
+            continue  # leads sit under their own chip, not in the severity badges
         sev = f.get("severity") or "Info"
         by_sev[sev] = by_sev.get(sev, 0) + 1
     statuses = get_finding_statuses(scan_id)
-    resolved = sum(1 for f in findings if statuses.get(finding_key(f)) in ("Resolved", "Risk Accepted"))
-    non_path = sum(1 for f in findings if f.get("source") != "path_consolidation")
+    non_path_findings = [f for f in findings if f.get("source") != "path_consolidation"]
+    non_path = len(non_path_findings)
+    # Remediation progress is over the findings the user actually sees (non-path), so the fraction
+    # and the percentage share one denominator.
+    resolved = sum(1 for f in non_path_findings
+                   if statuses.get(finding_key(f)) in ("Resolved", "Risk Accepted"))
     attack_paths = _attack_path_display_count(result)
     return {
         "id": scan_id,
@@ -490,7 +679,7 @@ def _summary(result: dict, scan_id: str, files: list[str]) -> dict:
         "ai_enabled": result.get("ai_enabled", False),
         "complete": result.get("collection", {}).get("complete", True),
         "resolved": resolved,
-        "remediation_pct": round(100 * resolved / len(findings)) if findings else 0,
+        "remediation_pct": round(100 * resolved / non_path) if non_path else 0,
     }
 
 
@@ -616,7 +805,7 @@ def list_scans() -> list[dict]:
     with _INDEX_LOCK:
         entries = _read_index()
         if not entries:
-            # Index missing or empty - rebuild from full scan files on first call
+            # Index missing or empty, rebuild from full scan files on first call
             # or after data-dir recovery.
             scan_files = [p for p in SCANS_DIR.glob("*.json") if p.name != _INDEX_FILE_NAME]
             if scan_files:
@@ -811,6 +1000,11 @@ def finding_key(finding: dict) -> str:
     otherwise title + sorted entity ids (AI-generated findings have no rule_id)."""
     if finding.get("rule_id"):
         base = finding["rule_id"]
+    elif finding.get("source") == "sp_group" and finding.get("sp_id"):
+        # A service-principal group's title embeds its member count ("... N findings"), which shifts
+        # as rules change, so a title-based key would change across re-scans and orphan its recorded
+        # status / work item. Key on the stable service-principal id instead.
+        base = f"sp_group|{finding['sp_id']}"
     else:
         entities = finding.get("entities") or []
         if not isinstance(entities, list):
@@ -824,7 +1018,7 @@ def finding_key(finding: dict) -> str:
 
 # ---- Azure DevOps integration (PAT is env-only; config is non-secret settings) ----
 def get_ado_pat() -> str | None:
-    """The Azure DevOps Personal Access Token - env var ONLY (PH_ADO_PAT), never persisted."""
+    """The Azure DevOps Personal Access Token, env var ONLY (PH_ADO_PAT), never persisted."""
     v = (os.environ.get("PH_ADO_PAT") or "").strip()
     return v or None
 
@@ -854,7 +1048,7 @@ def _workitems_file(scan_id: str) -> Path:
 
 
 def get_work_items(scan_id: str) -> dict:
-    """{finding_key: {id, url, type, assignee, parent_epic, created_at}} - created ADO tickets."""
+    """{finding_key: {id, url, type, assignee, parent_epic, created_at}}, created ADO tickets."""
     p = _workitems_file(scan_id)
     if not p.exists():
         return {}
@@ -868,19 +1062,35 @@ def record_work_item(scan_id: str, key: str, info: dict) -> dict:
     with _WORKITEMS_LOCK:
         items = get_work_items(scan_id)
         items[key] = info
-        p = _workitems_file(scan_id)
-        fd, tmp = tempfile.mkstemp(dir=str(p.parent), suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(items, f, indent=2)
-            os.replace(tmp, p)
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        _write_work_items(scan_id, items)
     return items
+
+
+def delete_work_item(scan_id: str, key: str) -> dict | None:
+    """Forget the local work-item record for a finding so a new ticket can be raised. Returns the
+    removed record (or None if there was none). Does NOT touch Azure DevOps, the caller deletes the
+    remote work item first."""
+    with _WORKITEMS_LOCK:
+        items = get_work_items(scan_id)
+        removed = items.pop(key, None)
+        if removed is not None:
+            _write_work_items(scan_id, items)
+    return removed
+
+
+def _write_work_items(scan_id: str, items: dict) -> None:
+    p = _workitems_file(scan_id)
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(items, f, indent=2)
+        os.replace(tmp, p)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _status_file(scan_id: str) -> Path:
@@ -897,6 +1107,35 @@ def get_finding_statuses(scan_id: str) -> dict[str, str]:
         return json.loads(p.read_text())
     except Exception:
         return {}
+
+
+def _refresh_index_remediation(scan_id: str) -> None:
+    """Recompute the history-index entry's resolved / remediation_pct for one scan after a status
+    change. The index snapshot is written at save time (when nothing is resolved yet), so without
+    this the History page's remediation column stays frozen at 0 until a full index rebuild."""
+    try:
+        result = get_scan(scan_id)
+        if not result:
+            return
+        statuses = get_finding_statuses(scan_id)
+        non_path = [f for f in (result.get("findings") or [])
+                    if f.get("source") != "path_consolidation"]
+        resolved = sum(1 for f in non_path
+                       if statuses.get(finding_key(f)) in ("Resolved", "Risk Accepted"))
+        n = len(non_path)
+        with _INDEX_LOCK:
+            entries = _read_index()
+            changed = False
+            for e in entries:
+                if e.get("id") == scan_id:
+                    e["resolved"] = resolved
+                    e["remediation_pct"] = round(100 * resolved / n) if n else 0
+                    changed = True
+                    break
+            if changed:
+                _write_index(entries)
+    except Exception:
+        pass  # best-effort; a full index rebuild corrects it
 
 
 def set_finding_status(scan_id: str, key: str, status: str) -> dict[str, str]:
@@ -917,6 +1156,7 @@ def set_finding_status(scan_id: str, key: str, status: str) -> dict[str, str]:
             except OSError:
                 pass
             raise
+    _refresh_index_remediation(scan_id)   # keep the History remediation column current
     return statuses
 
 
