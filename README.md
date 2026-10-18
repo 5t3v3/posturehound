@@ -2,7 +2,7 @@
 
 # PostureHound
 
-Read-only Azure / Entra identity attack-surface posture audit, driven by [AzureHound](https://github.com/SpecterOps/AzureHound) collection data.
+Read-only Azure / Entra identity attack-surface posture audit. Derives typed escalation edges across the full privilege graph, fires 145 deterministic detection rules, and renders a live interactive attack graph with choke-point ranked remediation.
 
 **[Documentation →](https://5t3v3.github.io/posturehound/)**
 
@@ -196,12 +196,32 @@ exit code: 2  (Critical findings present - CI gate triggered)
 Two layers run on every scan:
 
 **Deterministic rules (145 rules)**
-Cover identity, apps/SPs, RBAC, groups, guests, Key Vault, storage, compute/managed-identity, PIM eligibility, Azure Resource Graph config, and tenant governance. Rules always run - critical patterns can never be silently missed regardless of AI availability. Browse them on the in-app **Rules** page or see [`docs/PRD.md`](docs/PRD.md).
+Cover identity, apps/SPs, RBAC, groups, guests, Key Vault, storage, compute/managed-identity, PIM eligibility, Azure Resource Graph config, exfiltration-class Graph API permissions, and tenant governance. Rules always run - critical patterns can never be silently missed regardless of AI availability. Browse them on the in-app **Rules** page or see [`docs/PRD.md`](docs/PRD.md).
 
 **Two-agent AI generation** (opt-in, requires `ANTHROPIC_API_KEY`)
 A **Sonnet** analyst reasons broadly over a deterministic fact pack to generate candidate findings with full reasoning chains. An **Opus** principal architect reviews those candidates, re-grades severity where warranted, rejects what does not hold up, and adds findings of its own. Every AI claim is validated against the fact pack - neither agent can fabricate an entity or relationship not present in the tenant data.
 
 Findings from both layers are merged, deduplicated, and tagged by source (AI-generated vs. deterministic) in the report.
+
+---
+
+## CIS Benchmark compliance
+
+PostureHound maps every finding to the [CIS Azure Foundations Benchmark v3.0.0](https://www.cisecurity.org/benchmark/azure). The **Compliance** tab in the web UI shows coverage against each CIS control, which controls are assessed, and which findings map to each one. Useful for teams that need to report against a recognised framework alongside the posture grade.
+
+---
+
+## Multi-user access control
+
+The web UI supports multiple named accounts with role-based access control. Three built-in roles ship by default:
+
+| Role | Permissions |
+|------|-------------|
+| **Administrator** | Full access including user management and settings |
+| **Analyst** | Dashboard, findings, scans, attack graph, rules, compliance, AI traces, Azure DevOps integration |
+| **Viewer** | Dashboard, findings, scan history, compliance |
+
+Additional roles with custom permission sets can be created from the **Users and Roles** settings page. All accounts use PBKDF2-HMAC-SHA256 password hashing. The default `admin / posturehound` credential is valid only until changed on first sign-in.
 
 ---
 
@@ -232,9 +252,13 @@ The deterministic engine is the single source of truth. Scoring, reporting, the 
 | `normalize.py` | Map records into a typed `networkx` graph |
 | `derive.py` | Derive abuse edges (effective roles, AddSecret, app-role / RBAC escalation, KV reach) |
 | `rules/` | Detection catalog + engine with data-source gating |
+| `cis.py` | CIS Azure Foundations Benchmark v3.0.0 control mapping |
+| `remediation.py` | Standardised remediation preamble injection for all findings |
 | `scoring.py` | Posture score, blast-radius, maximum-impact chain, choke points |
 | `report.py` | Self-contained CSP-friendly HTML report |
-| `api.py` | Hardened read-only FastAPI service |
+| `api.py` | FastAPI service with per-endpoint RBAC enforcement |
+| `store.py` | Persistence, user accounts, role definitions |
+| `auth.py` | PBKDF2-HMAC-SHA256 password hashing and HS256 JWT sessions |
 | `cli.py` | `scan` / `validate` commands |
 
 ---
@@ -300,6 +324,7 @@ PostureHound holds a tenant's full privilege map, which is sensitive. The applic
 - **Input validation.** Enforced max upload size (`PH_MAX_UPLOAD_MB`, default 50 MB). Malformed input returns a clean `400`.
 - **Hardened responses.** Strict CSP (`script-src 'none'`), `nosniff`, frame-deny, `no-referrer`, `no-store`. OpenAPI docs are disabled.
 - **No wildcard CORS.** Same-origin by default.
+- **RBAC enforcement.** Every API endpoint declares a required permission. The JWT middleware rejects requests from roles that lack it. The API key is never written to disk.
 
 See [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
 
