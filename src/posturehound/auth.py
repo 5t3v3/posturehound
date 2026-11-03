@@ -6,9 +6,9 @@ This module is the crypto core; persistence of the account and the signing secre
 
 JWT is implemented here rather than pulled in as a dependency, and the two classic JWT
 weaknesses are closed explicitly:
-  * algorithm confusion - the verifier PINS alg to "HS256" and rejects "none"/asymmetric,
+  * algorithm confusion, the verifier PINS alg to "HS256" and rejects "none"/asymmetric,
     so a token cannot downgrade the check,
-  * forgery - the signature is compared in constant time (hmac.compare_digest).
+  * forgery, the signature is compared in constant time (hmac.compare_digest).
 Only HS256 is ever produced or accepted.
 """
 from __future__ import annotations

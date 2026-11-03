@@ -1,9 +1,9 @@
 """Deterministic finding narration.
 
-AI-narrated findings read specifically ("Aaron Drake, a disabled account, retains
+AI-narrated findings read specifically ("Alex Carter, a disabled account, retains
 Owner across 11 subscriptions…") because the model names the actual entities. A
-deterministic finding historically showed only its rule-level description - the same
-generic sentence for every instance - so it felt thin next to the AI version even
+deterministic finding historically showed only its rule-level description, the same
+generic sentence for every instance, so it felt thin next to the AI version even
 though the underlying evidence was every bit as concrete.
 
 This module builds, WITHOUT an LLM, a specific per-finding summary and evidence list
@@ -57,7 +57,7 @@ def _fmt_val(v) -> str:
 
 def evidence_lines(f: dict, cap: int = 20) -> list[str]:
     """One concrete line per affected entity: its name and the salient facts from its
-    evidence - the per-instance detail a reviewer needs to act, with no LLM."""
+    evidence, the per-instance detail a reviewer needs to act, with no LLM."""
     out: list[str] = []
     for e in (f.get("entities") or [])[:cap]:
         name = e.get("name") or e.get("id") or "?"
@@ -74,7 +74,7 @@ def evidence_lines(f: dict, cap: int = 20) -> list[str]:
             if ev.get(k) not in (None, "", [], {}):
                 parts.append(f"{k}={_fmt_val(ev[k])}")
         detail = note or "; ".join(parts)
-        out.append(f"{name} ({_kind(e)})" + (f" - {detail}" if detail else ""))
+        out.append(f"{name} ({_kind(e)})" + (f", {detail}" if detail else ""))
     n = f.get("affected_count") or len(f.get("entities") or [])
     if n > cap:
         out.append(f"… and {n - cap} more")
@@ -83,7 +83,7 @@ def evidence_lines(f: dict, cap: int = 20) -> list[str]:
 
 def finding_summary(f: dict) -> str:
     """A specific one-line summary naming the actual entities and the strongest concrete
-    signal - the deterministic equivalent of the AI's per-finding prose."""
+    signal, the deterministic equivalent of the AI's per-finding prose."""
     ents = f.get("entities") or []
     n = f.get("affected_count") or len(ents)
     if not ents:
@@ -111,9 +111,9 @@ def finding_summary(f: dict) -> str:
     if best_label and best_val >= 2:
         highlight = f" Up to {int(best_val)} {best_label} on a single entity."
 
-    lead = f"{n} affected - {kindstr}: {namestr}." if n > 1 else f"{namestr} ({list(kinds)[0]})."
+    lead = f"{n} affected, {kindstr}: {namestr}." if n > 1 else f"{namestr} ({list(kinds)[0]})."
 
-    # Cross-subscription span - the tenant-wide reach a per-subscription review misses.
+    # Cross-subscription span, the tenant-wide reach a per-subscription review misses.
     span = ""
     reach = f.get("subscription_reach_count") or 0
     subs = f.get("subscription_reach") or []
@@ -125,7 +125,7 @@ def finding_summary(f: dict) -> str:
 
 def instantiated_scenario(f: dict) -> str:
     """The knowledge-base attack scenario (generic) prefixed with a concrete instantiation
-    naming the worst affected entity and the reach it commands - so the scenario reads
+    naming the worst affected entity and the reach it commands, so the scenario reads
     about THIS tenant's principals, not an abstract 'attacker'."""
     generic = str(f.get("attack_scenario") or (f.get("detail") or {}).get("scenario") or "").strip()
     ents = f.get("entities") or []

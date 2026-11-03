@@ -1,310 +1,173 @@
-![PostureHound](banner.svg)
-
 # PostureHound
 
-Read-only Azure / Entra identity attack-surface posture audit, driven by [AzureHound](https://github.com/SpecterOps/AzureHound) collection data.
+**Read-only Azure / Entra identity attack-surface posture audit, driven by AzureHound collection data.**
 
-**[Documentation →](https://5t3v3.github.io/posturehound/)**
+Open source (MIT). Nothing is hardcoded to any tenant or vendor: every integration is optional and
+configured from the in-app Settings screen or environment variables. Fork it and make it yours, see
+[Configure it for your organisation](#configure-it-for-your-organisation).
 
----
+> **New here?** Open the illustrated **[User Guide](docs/USER_GUIDE.html)** — setup through your first scan.
+>
+> Quick start (Docker):
+> ```bash
+> cp .env.example .env
+> docker compose up -d --build      # then open http://127.0.0.1:31337
+> # first sign-in: admin / posturehound  → change it in Settings
+> ```
 
-## Installation
+Local multi-page web app: **Dashboard**, **New scan**, **History** (stored locally), and **Settings**
+(Anthropic API key held in server memory only, never written to disk). Start with `./setup.sh && ./start.sh`
+and open `http://127.0.0.1:31013`.
 
-### Option 1 - Docker (recommended)
+The data layer is built against AzureHound v2's real output schema — the actual relationship kinds, the
+per-resource RBAC assignment kinds (`AZSubscriptionRoleAssignment`, `AZKeyVaultRoleAssignment`, …),
+GUID-referenced role definitions resolved via Azure's global built-in-role IDs, Graph app-role GUIDs, and
+PIM-eligible (not just active) role assignments — so it parses genuine `azurehound` output, including
+"shadow admin" paths that an active-roles-only view would miss entirely. Collect twice (a Microsoft Graph
+token for the Entra plane and an Azure Management token for the resource plane, e.g. `ad.json` + `rm.json`)
+and upload both together to merge.
 
-Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Mac/Windows) or Docker Engine (Linux).
+PostureHound ingests an [AzureHound](https://github.com/SpecterOps/AzureHound) collection (its Azure
+identity-graph JSON export) and evaluates the tenant's **identity security posture offline**: entry
+points, misconfigurations, over-permissive service principals, lateral-movement opportunities, and
+privilege-escalation chains to Tier-0.
 
-**1. Clone the repo**
-```bash
-git clone https://github.com/5t3v3/posturehound.git
-cd posturehound
-```
-
-**2. Copy the example environment file**
-```bash
-cp .env.example .env
-```
-
-Edit `.env` if you want live Azure collection (fill in your Reader service-principal credentials) or AI findings (add your `ANTHROPIC_API_KEY`). Both are optional - you can upload an AzureHound file and get deterministic results without either.
-
-**3. Start the container**
-```bash
-docker compose up -d --build
-```
-
-The first build takes 2-3 minutes. After that, subsequent starts are instant.
-
-**4. Open the web UI**
-
-Navigate to [http://127.0.0.1:31337](http://127.0.0.1:31337).
-
-```bash
-docker compose logs -f        # follow logs
-docker compose down           # stop (data is preserved)
-docker compose up -d          # restart without rebuilding
-```
-
-> **Data location.** Scans and settings are stored in `~/.posturehound` on your host machine, so they survive container rebuilds and `docker compose down`.
+> **Scope.** PostureHound assesses the **identity attack surface** visible in AzureHound data (directory
+> roles, RBAC, app/SP permissions, ownership, group membership, Key Vault/storage access, managed identities,
+> PIM eligibility). It is **not** a full CSPM. Controls AzureHound cannot see — MFA/authentication methods,
+> Conditional Access, sign-in/audit logs, network exposure, encryption-at-rest — are reported as **not
+> assessable**, never as a pass. See the Coverage panel in every report.
 
 ---
 
-### Option 2 - Local Python
+## Configure it for your organisation
 
-Requires Python 3.10+.
+Every integration is **optional and blank by default**, so a fresh clone runs the deterministic engine
+on an AzureHound upload with zero configuration. Turn on what you need from the in-app **Settings** screen
+(grouped into **AI**, **Collection**, **Integrations**, **Account**) or via environment variables:
 
-```bash
-git clone https://github.com/5t3v3/posturehound.git
-cd posturehound
-pip install -r requirements.txt
-uvicorn posturehound.api:app --port 31337
-```
-
-Or use the convenience scripts:
-```bash
-./setup.sh && ./start.sh
-```
-
----
-
-## Quick start
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
-
-Open **http://127.0.0.1:31337** in your browser.
-Default credentials: `admin` / `posturehound` - you are prompted to change the password on first sign-in.
+- **Anthropic API key** (optional) enables the AI analysis layer. Held in server memory only, never written
+  to disk; set `ANTHROPIC_API_KEY` in `.env` or on the Settings page. Without a key the deterministic engine
+  still runs in full.
+- **AI vs. deterministic, chosen per scan.** Every scan path, file upload and live collection, offers two
+  buttons: **(AI)** adds the correlated attack-chain narrative and cross-finding analysis, **(no AI)** runs
+  the deterministic rule engine only, no key, no AI cost, fully offline.
+- **Live Azure collection** (optional) points at a **read-only service principal** (Reader at the tenant root
+  management group for the resource plane, plus directory read for the Entra plane) to collect the tenant
+  directly, no AzureHound upload. Credentials come from `PH_ARG_TENANT_ID` / `PH_ARG_CLIENT_ID` /
+  `PH_ARG_CLIENT_SECRET` or the Settings form. See [`docs/AZURE_SP_SETUP.md`](docs/AZURE_SP_SETUP.md).
+- **Azure DevOps** (optional) raises a work item from any finding, with severity-driven SLA target dates.
+  Org URL / project / area path / tags / default assignee live in Settings; the PAT is read only from
+  `PH_ADO_PAT` and is never stored on disk.
+- **Users, roles & permissions.** Multi-user with per-screen RBAC. The first admin is `admin` /
+  `posturehound`, change it immediately; create roles and users from the **Users & Roles** screen.
 
 ---
 
-## Example output
+## How findings are produced
 
-The collection below represents a fictitious Azure tenant ("Contoso Demo") with several deliberate misconfigurations. Run it locally to see what PostureHound surfaces:
+Two layers, working together:
 
-```bash
-python -m posturehound.cli scan docs/demo_collection.json --format html --out report.html
-```
+1. **150+ deterministic safety-net rules** across identity, apps/SPs, RBAC, groups, guests, Key Vault, storage,
+   compute/managed-identity theft, PIM eligibility, Azure Resource Graph config, and tenant identity governance.
+   These always run, so always-critical patterns can never be silently missed regardless of AI, and they are the
+   only layer a **no-AI** scan uses. Browse them on the in-app **Rules** page, or see [`docs/PRD.md`](docs/PRD.md).
+2. **Two-agent AI generation** (opt-in, needs an Anthropic API key): a **Sonnet** analyst (L5) reasons
+   broadly over a deterministic fact pack — not a fixed checklist — to generate candidate findings with full
+   reasoning chains. An **Opus** principal architect (L8) reviews those candidates: keeps and deepens what
+   holds up, re-grades severity where warranted, rejects what doesn't, and adds findings of its own by
+   reasoning fresh over the same facts. Every claim from either agent is validated against the fact pack, so
+   neither can fabricate an entity or relationship not actually in the tenant.
 
-**Overview - posture summary and highest-impact exposure**
-
-![PostureHound overview](docs/screenshots/overview.png)
-
-**Findings - full finding list with severity, category and affected entities**
-
-![PostureHound findings](docs/screenshots/findings.png)
-
-**Attack Paths - maximum-impact escalation routes to Tier-0**
-
-![PostureHound attack paths](docs/screenshots/attack_paths.png)
-
-**Attack Graph - interactive graph of escalation paths from any principal to Tier-0**
-
-![PostureHound attack graph](docs/screenshots/attack_graph.png)
-
-**What is in the demo tenant**
-
-| Identity | Misconfigurations |
-|----------|-------------------|
-| Alice Chen (User) | Global Administrator + Subscription Owner - no PIM |
-| Bob Smith (User) | PIM-eligible Global Administrator with no MFA required on activation |
-| vendor@partner.onmicrosoft.com (Guest) | Cloud Application Administrator role - external account |
-| AutomationSP (Service Principal) | AppRoleAssignment.ReadWrite.All + Subscription Owner + Key Vault write access |
-| GraphApiApp (Service Principal) | RoleManagement.ReadWrite.Directory + Directory.ReadWrite.All, owned by Bob |
-| kv-prod-secrets (Key Vault) | No network restrictions, guest and SP with broad access |
-| stprodlogs (Storage Account) | Public blob access enabled, HTTP allowed |
-
-**Score: F (21/100) - 4 Critical, 10 High, 4 Medium, 3 Low**
-
-```
-Severity breakdown
-  Critical  4   Service principal self-escalation, guest with privileged role,
-                attack path to Tier-0, UAA self-escalation
-  High     10   Dangerous Graph permissions, standing SP credentials, weak PIM
-                policy, broad RBAC, Storage key exposure
-  Medium    4   Orphaned role-assignable group, Key Vault open to internet,
-                public blob access, HTTP traffic allowed
-  Low       3   Secret-based auth, direct role assignments, insufficient GA count
-```
-
-**Attack paths found: 7 paths, 4 reaching Tier-0**
-
-```
-Entry point                   Objective               Tier-0  Hops  Route
-GraphApiApp (SP)          ->  Global Administrator     yes      1   CanGrantRole
-AutomationSP (SP)         ->  Global Administrator     yes      2   CanAddSecret -> CanGrantRole
-Bob Smith (User)          ->  Global Administrator     yes      1   EligibleForRole
-vendor@partner (Guest)    ->  Global Administrator     yes      2   CanAddSecret -> CanGrantRole
-```
-
-**Choke points - highest-leverage remediation targets**
-
-| Principal | Paths through | Action |
-|-----------|--------------|--------|
-| GraphApiApp | 5 paths (100%) | Remove RoleManagement.ReadWrite.Directory |
-| AutomationSP | 3 paths (43%) | Remove AppRoleAssignment.ReadWrite.All, rotate credentials |
-| Global Administrator role | 2 paths (29%) | Enforce MFA + approval on PIM activation |
-
-**CLI output (Critical findings only)**
-
-```
-$ python -m posturehound.cli scan docs/demo_collection.json --min-severity Critical
-
-AZ-APP-001  Critical  Service principal can grant itself any Entra role
-            Entities: AutomationSP, GraphApiApp
-            RoleManagement.ReadWrite.Directory lets the SP assign Global Administrator
-            to itself in a single Graph API call.
-
-AZ-IDENT-004  Critical  Guest user holds a privileged Entra role
-              Entities: vendor@partner.onmicrosoft.com
-              Guest identities are governed by the home tenant's controls.
-              Compromise at the partner propagates directly into your tenant.
-
-AZ-PATH-001  Critical  Non-privileged principal can escalate to a Tier-0 role
-             Entities: GraphApiApp
-             GraphApiApp -> Global Administrator (1 hop, CanGrantRole)
-
-AZ-RBAC-002  Critical  User Access Administrator at broad scope (self-escalation)
-             Entities: AutomationSP, Alice Chen
-             Holder can assign itself Owner over the subscription then access
-             all resources and managed identities.
-
-exit code: 2  (Critical findings present - CI gate triggered)
-```
-
----
-
-## How to run a scan
-
-1. **Collect** an AzureHound JSON export from your Azure tenant:
-   ```bash
-   azurehound list -t <tenant-id> -u <username> -p <password> -o collection.zip
-   ```
-   Or use live collection by setting the Reader SP credentials in `.env`.
-
-2. **Upload** the collection file through the **New Scan** page in the web UI, or via the CLI:
-   ```bash
-   python -m posturehound.cli scan collection.json --format html --out report.html
-   ```
-
-3. **Review findings** on the report page. Findings are tagged by source (deterministic rule vs. AI-generated) and severity (Critical / High / Medium / Low / Informational).
-
----
-
-## Findings engine
-
-Two layers run on every scan:
-
-**Deterministic rules (145 rules)**
-Cover identity, apps/SPs, RBAC, groups, guests, Key Vault, storage, compute/managed-identity, PIM eligibility, Azure Resource Graph config, and tenant governance. Rules always run - critical patterns can never be silently missed regardless of AI availability. Browse them on the in-app **Rules** page or see [`docs/PRD.md`](docs/PRD.md).
-
-**Two-agent AI generation** (opt-in, requires `ANTHROPIC_API_KEY`)
-A **Sonnet** analyst reasons broadly over a deterministic fact pack to generate candidate findings with full reasoning chains. An **Opus** principal architect reviews those candidates, re-grades severity where warranted, rejects what does not hold up, and adds findings of its own. Every AI claim is validated against the fact pack - neither agent can fabricate an entity or relationship not present in the tenant data.
-
-Findings from both layers are merged, deduplicated, and tagged by source (AI-generated vs. deterministic) in the report.
-
----
+Findings from both layers are merged, deduped, and clearly tagged by source (✦ AI-generated vs. ⚙
+deterministic) in the report.
 
 ## Remediation workflow
 
-Findings can be tracked to closure without leaving the tool:
+This isn't a one-shot report generator — findings can be tracked to closure:
 
-- Set status per finding: **New / Acknowledged / In Progress / Resolved / Risk Accepted**
-- **Action Plan** tab: every open finding in one prioritised list (Now / Next / Backlog by severity)
-- **Scan comparison**: diff two scans to see what is resolved and what is new
-- **Posture trend**: score-over-time sparkline on the Dashboard once you have more than one scan
-
----
+- Mark any finding **New / Acknowledged / In Progress / Resolved / Risk Accepted**, persisted per scan.
+- **Action Plan** tab: every open finding consolidated into one prioritised list (Now/Next/Backlog by
+  severity), so remediation is one ordered plan instead of triaging findings individually.
+- **Scan comparison**: diff two scans to see what got resolved and what's new.
+- **Posture trend**: score-over-time sparkline on the Dashboard once you have more than one scan.
 
 ## Architecture
 
 ```
-AzureHound JSON -> ingest -> normalize -> derive -> rules -> score+analytics -> report / API
+AzureHound JSON ─▶ ingest ─▶ normalize ─▶ derive ─▶ rules ─▶ score+analytics ─▶ report / API
                   (parse)    (graph)     (abuse     (catalog) (grade, max-impact,
                                           edges)               choke points)
 ```
 
-The deterministic engine is the single source of truth. Scoring, reporting, the API, and the AI layer all read from it and may not assert facts it does not contain.
+The **deterministic engine is the single source of truth.** Scoring, reporting, the API, and any future AI layer read from it and may not assert facts it does not contain. Every derived edge carries its named primitive and evidence.
 
 | Module | Responsibility |
 |--------|----------------|
-| `ingest.py` | Format detection (JSON / NDJSON / zip), streaming parse, resilient skip-and-count |
-| `normalize.py` | Map records into a typed `networkx` graph |
-| `derive.py` | Derive abuse edges (effective roles, AddSecret, app-role / RBAC escalation, KV reach) |
-| `rules/` | Detection catalog + engine with data-source gating |
+| `ingest.py` | Format detection (JSON / NDJSON / zip), streaming parse, resilient skip-and-count, `validate` |
+| `normalize.py` | Map records into a typed `networkx` graph (nodes + raw relationship edges) |
+| `derive.py` | Derive identity attack-path abuse edges (effective roles, AddSecret, app-role / RBAC escalation, KV reach) |
+| `rules/` | Detection catalog + engine with data-source gating → "not assessed" |
 | `scoring.py` | Posture score, blast-radius, maximum-impact chain, choke points |
-| `report.py` | Self-contained CSP-friendly HTML report |
+| `report.py` | Self-contained, CSP-friendly HTML report |
 | `api.py` | Hardened read-only FastAPI service |
 | `cli.py` | `scan` / `validate` commands |
 
----
-
-## CLI reference
+## Install
 
 ```bash
-# Scan and print JSON
-python -m posturehound.cli scan collection.json
-
-# Produce an HTML report
-python -m posturehound.cli scan collection.json --format html --out report.html
-
-# Filter by minimum severity
-python -m posturehound.cli scan collection.json --min-severity High
-
-# Validate a collection file without scanning
-python -m posturehound.cli validate collection.json
+pip install -r requirements.txt          # networkx, orjson, fastapi, uvicorn, python-multipart
+# dev: pytest, httpx
 ```
 
-The `scan` command exits with code `2` if any Critical finding is present - useful for CI gating.
+## Usage
 
----
+**CLI**
+```bash
+python -m posturehound.cli scan collection.json                 # JSON to stdout
+python -m posturehound.cli scan collection.json --format html --out report.html
+python -m posturehound.cli scan collection.json --min-severity High
+python -m posturehound.cli validate collection.json
+```
+The `scan` command exits non-zero (2) if any Critical finding exists — useful for CI gating.
 
-## API
-
+**API**
 ```bash
 uvicorn posturehound.api:app --port 8080
-
-# GET  /            Minimal uploader UI
-# POST /api/assess  Multipart file upload -> assessment JSON
-# POST /api/report  Multipart file upload -> HTML report
+# GET  /            minimal uploader UI
+# POST /api/assess  multipart file upload -> assessment JSON
+# POST /api/report  multipart file upload -> HTML report
 # POST /api/validate
 # GET  /health
 ```
 
----
-
-## Library
-
+**Library**
 ```python
 from posturehound import assess_file, assess_bytes
-
-result = assess_file("collection.json")
-# returns: { score, findings, analytics, coverage }
+result = assess_file("collection.json")     # dict: score, findings, analytics, coverage
 ```
 
----
+## Security posture of the tool itself
 
-## Scope
+PostureHound holds a tenant's full privilege map, which is sensitive. The application is built read-only and defensively:
 
-PostureHound assesses the **identity attack surface** visible in AzureHound data: directory roles, RBAC, app/SP permissions, ownership, group membership, Key Vault/storage access, managed identities, and PIM eligibility.
-
-It is **not** a full CSPM. Controls AzureHound cannot see - MFA/authentication methods, Conditional Access, sign-in/audit logs, network exposure, encryption-at-rest - are reported as **not assessable**, never as a pass. See the Coverage panel in every report.
-
----
-
-## Security
-
-PostureHound holds a tenant's full privilege map, which is sensitive. The application is built defensively:
-
-- **Read-only / in-memory.** The API never reads server paths supplied by the user, never writes to disk, never fetches URLs, and never executes collection content.
-- **Input validation.** Enforced max upload size (`PH_MAX_UPLOAD_MB`, default 50 MB). Malformed input returns a clean `400`.
-- **Hardened responses.** Strict CSP (`script-src 'none'`), `nosniff`, frame-deny, `no-referrer`, `no-store`. OpenAPI docs are disabled.
-- **No wildcard CORS.** Same-origin by default.
+- **Read-only / in-memory.** The only input is a user-uploaded AzureHound file. The API never reads server paths supplied by the user, never writes to disk, never fetches URLs (no SSRF), and never executes collection content.
+- **Input validation & limits.** Enforced max upload size (`PH_MAX_UPLOAD_MB`, default 50). Malformed input returns a clean `400`, never a stack trace.
+- **Hardened responses.** Strict CSP (`script-src 'none'`), `nosniff`, frame-deny, `no-referrer`, `no-store`. The OpenAPI schema and interactive docs are disabled.
+- **No wildcard CORS**; same-origin by default.
 
 See [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
 
----
+## Data-model caveat
 
-## Data model caveat
+AzureHound's relationship representation varies by version. The loader field mappings in `normalize.py` are pragmatic and should be **validated against your AzureHound version** before relying on results — see [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) (open question OQ-1). The derivation and detection logic is version-independent; only the thin ingest adapter is version-sensitive.
 
-AzureHound's relationship representation varies by version. The loader field mappings in `normalize.py` are pragmatic and should be **validated against your AzureHound version** before relying on results. See [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+## Tests
+
+```bash
+PYTHONPATH=src python -m pytest tests/ -q     # ingest, normalize, derive, rules, scoring, AI pipeline, graph engine
+```
+
+## License
+
+MIT, see [`LICENSE`](LICENSE). Contributions welcome.

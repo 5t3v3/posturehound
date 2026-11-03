@@ -12,10 +12,10 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-# Snapshot format version - bump when the node/edge shape changes so stale caches
+# Snapshot format version, bump when the node/edge shape changes so stale caches
 # are transparently rebuilt instead of misread.
 # v2: edges carry weight/why/conditions/evidence; nodes carry value.
-# v3: Tier-0 tightened to the curated high-impact role set - old caches must rebuild.
+# v3: Tier-0 tightened to the curated high-impact role set, old caches must rebuild.
 # v4: RBAC edge keys include the role, so multiple roles at one scope no longer collapse.
 SNAPSHOT_VERSION = 4
 
@@ -92,6 +92,7 @@ class GraphEdge:
     derived: bool = False           # True for escalation/abuse edges (attack-relevant)
     count: int = 1                  # how many raw assignments collapsed into this edge
     weight: float = 1.0             # traversal difficulty (lower = easier); for cost-aware paths
+    weight_reason: str = ""         # why the weight was adjusted from its base (context-aware, E3)
     why: str = ""                   # plain explanation of the abuse (provenance panel)
     conditions: list[str] = field(default_factory=list)   # extra prerequisites
     evidence: dict[str, Any] = field(default_factory=dict)  # concrete scope/role/reason
@@ -99,7 +100,7 @@ class GraphEdge:
     @property
     def key(self) -> str:
         """Stable, unique edge id. A snapshot dedups to one edge per src+type+primitive+target,
-        PLUS the RBAC role - a node can hold several distinct RBAC roles (e.g. Contributor AND
+        PLUS the RBAC role, a node can hold several distinct RBAC roles (e.g. Contributor AND
         User Access Administrator) at the SAME scope, and collapsing those loses the privileged
         one (and its Tier-0 justification)."""
         base = f"{self.source}|{self.type}|{self.primitive or ''}|{self.target}"

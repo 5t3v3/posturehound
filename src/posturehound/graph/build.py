@@ -36,6 +36,28 @@ def _compact_evidence(ev: dict | None) -> dict:
     return out
 
 
+def _context_weight(g, e, base: float) -> "tuple[float, str]":
+    """Context-aware edge difficulty (PRD v2.1 Workstream E3). Today: a PIM EligibleForRole edge's
+    weight depends on the target role's collected activation policy, no MFA + no approval makes
+    self-activation trivial (weight 1.0), MFA + approval makes it hard (3.0). Deterministic for
+    the same input. Returns (weight, reason); reason is '' when unadjusted."""
+    if e.type.value != "EligibleForRole":
+        return base, ""
+    role = g.node(e.dst)
+    pol = (role.props.get("pim_policy") if role and role.props else None) or {}
+    if not pol:
+        return base, ""
+    mfa = pol.get("activationRequiresMfa")
+    appr = pol.get("activationRequiresApproval")
+    if mfa is False and not appr:
+        return 1.0, "no MFA on activation"
+    if mfa and appr:
+        return 3.0, "MFA and approval required on activation"
+    if mfa:
+        return 2.0, "MFA required on activation"
+    return base, ""
+
+
 def build_snapshot(g, *, scan_id: str | None = None) -> GraphSnapshot:
     """Flatten an in-memory model.Graph into a serializable GraphSnapshot."""
     nodes: list[GraphNode] = []
@@ -59,13 +81,15 @@ def build_snapshot(g, *, scan_id: str | None = None) -> GraphSnapshot:
     referenced: set[str] = set()
     for e in g.edges():                       # already sorted
         k = primitives.knowledge_for(e.primitive, e.type.value)
+        weight, weight_reason = _context_weight(g, e, k["weight"])
         ge = GraphEdge(
             source=e.src,
             target=e.dst,
             type=e.type.value,
             primitive=e.primitive,
             derived=bool(e.derived),
-            weight=k["weight"],
+            weight=weight,
+            weight_reason=weight_reason,
             why=k["why"],
             conditions=k["conditions"],
             evidence=_compact_evidence(e.evidence),

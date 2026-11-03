@@ -41,6 +41,7 @@ class Category(str, Enum):
     STORAGE = "Storage & Data"
     HYGIENE = "Hygiene & Lifecycle"
     GUEST = "Guest & Cross-Tenant"
+    LOGGING = "Logging & Monitoring"
     ATTACK_PATH = "Attack Path"
     BEST_PRACTICE = "Best Practice"
 
@@ -67,6 +68,11 @@ class NodeKind(str, Enum):
     VMSS = "AZVMScaleSet"
     CONTAINER_REGISTRY = "AZContainerRegistry"
     UNKNOWN = "AZUnknown"
+    # Synthetic nodes (not collected; derived to make an escalation walkable).
+    GRANTABLE_APP_ROLE = "GrantableAppRole"  # the app role an AppRoleAssignment.ReadWrite.All SP can self-grant
+    TENANT_CONTROL = "TenantControl"         # tenant-wide control reached by any critical Tier-0 role
+    DATA_SINK = "DataSink"                    # a data-plane exfiltration objective (mail, files, sites, ...)
+    SECURITY_CONTROLS = "SecurityControls"    # the tenant's security controls, weakened by CanWeakenControls
 
 
 class EdgeType(str, Enum):
@@ -95,6 +101,13 @@ class EdgeType(str, Enum):
     CAN_READ_STORAGE_BLOB = "CanReadStorageBlob"
     CAN_PUSH_CONTAINER = "CanPushContainer"
     ELIGIBLE_FOR_ROLE = "EligibleForRole"
+    CONTROLS_TENANT = "ControlsTenant"   # a critical Tier-0 role -> the synthetic TenantControl node
+    # Graph application-permission primitives (Workstream D): the three semantic classes the 19
+    # formerly-unwalkable DANGEROUS_GRAPH_APP_ROLES primitives map to. The specific primitive
+    # (CanExfiltrateMail, CanFederateTenant, ...) is preserved on the edge's `primitive` field.
+    CAN_CONTROL_TENANT = "CanControlTenant"      # tenant-takeover prims -> critical role / TenantControl
+    CAN_WEAKEN_CONTROLS = "CanWeakenControls"    # control-weakening prims -> SecurityControls
+    CAN_EXFILTRATE_DATA = "CanExfiltrateData"    # data-plane prims -> a DataSink
 
 
 @dataclass
@@ -126,7 +139,7 @@ def _edge_sort_key_light(e: "Edge") -> tuple:
 def _edge_sort_key(e: "Edge") -> tuple:
     """Total, order-independent key for the full edge sweep. Folds evidence in as a final
     tie-break so two parallel edges with the SAME endpoints and type but DIFFERENT evidence
-    (e.g. different scope) keep a stable relative order - which one survives a size cap must
+    (e.g. different scope) keep a stable relative order, which one survives a size cap must
     never depend on the collection's object order."""
     ev = e.evidence or {}
     return (e.src, e.dst, e.type.value, e.primitive or "",
@@ -152,7 +165,7 @@ class Graph:
         # (principal, rbac_assignment, resource, identity) tuple, so a principal holding
         # Contributor at many scopes re-emits the same (src, dst, type) once per scope.
         # On a real tenant that turned ~37K distinct escalation edges into 10,059,917
-        # attempts - enough to exhaust 32 GB of RAM+swap before build_fact_pack could
+        # attempts, enough to exhaust 32 GB of RAM+swap before build_fact_pack could
         # finish, and to starve the 5,000-edge fact-pack window with 99.6% duplicates.
         # Deduping here is semantically neutral: path-finding only cares whether an
         # edge of a given type exists between two nodes, not how many scopes imply it.
@@ -225,7 +238,7 @@ class Graph:
         return None
 
     def nodes(self) -> Iterable[Node]:
-        # Yield in a STABLE, id-sorted order - never networkx insertion order, which follows
+        # Yield in a STABLE, id-sorted order, never networkx insertion order, which follows
         # the collection's object order. A live re-collection returns the tenant's objects in
         # a different order every run; without this, that order flowed downstream into which
         # rows survived the fact-pack size caps, so the SAME tenant produced a different pack

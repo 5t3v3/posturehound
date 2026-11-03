@@ -9,7 +9,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# Local tool state (scan history / credentials) - never bake into the image.
+# Local tool state (scan history / credentials) — never bake into the image.
 .posturehound/
 data/
 

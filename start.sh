@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostureHound - start the read-only web app.
+# PostureHound — start the read-only web app.
 #   HOST / PORT override the bind address (default 127.0.0.1:31013).
 #   WORKERS sets uvicorn worker count (default 1).
 #   PH_MAX_UPLOAD_MB  per-file upload cap   (default 512)
@@ -32,7 +32,7 @@ scrub_stale_ca_env() {
 scrub_stale_ca_env
 
 if [ ! -x ./.venv/bin/python ]; then
-  echo "[PostureHound] .venv not found - run ./setup.sh first." >&2
+  echo "[PostureHound] .venv not found — run ./setup.sh first." >&2
   exit 1
 fi
 

@@ -118,17 +118,30 @@ def build_graph(ing: IngestResult) -> Graph:
             if nk == NodeKind.TENANT and g.tenant_id is None:
                 g.tenant_id = nid
 
-    # Pass 2: relationships (after nodes exist) - same deterministic order as pass 1.
+    # Pass 2: relationships (after nodes exist), same deterministic order as pass 1.
     for rec in records:
         _load_relationship(g, rec["kind"], rec["data"])
 
     # Pass 3: tenant-relative tagging (tenant id is known after pass 1).
     # AzureHound stores the tenant node id as "/tenants/<guid>" (path format) but
-    # appOwnerOrganizationId is the bare GUID - normalise both to lowercase GUID before comparing.
+    # appOwnerOrganizationId is the bare GUID, normalise both to lowercase GUID before comparing.
     def _bare_guid(s: str) -> str:
         return (s.split("/")[-1] if "/" in s else s).lower()
 
     tenant_guid = _bare_guid(str(g.tenant_id)) if g.tenant_id else None
+    if tenant_guid is None:
+        # No AZTenant node (a partial collection): don't silently disable foreign_tenant tagging.
+        # Infer the home tenant as the plurality owner-org across SPs (the home tenant owns most of
+        # them); require a clear plurality (>=2 SPs on the top org, or only one org present) so a
+        # lone guest SP is never mistaken for home.
+        from collections import Counter
+        orgs = Counter(_bare_guid(str(n.props.get("_owner_org")))
+                       for n in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL)
+                       if n.props.get("_owner_org"))
+        if orgs:
+            top, cnt = orgs.most_common(1)[0]
+            if top and (len(orgs) == 1 or cnt >= 2):
+                tenant_guid = top
     for n in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
         owner_org = n.props.get("_owner_org")
         if owner_org and tenant_guid and _bare_guid(str(owner_org)) != tenant_guid:
@@ -152,7 +165,7 @@ def _tag_node(node: Node, d: dict[str, Any]) -> None:
         sp_type = str(d.get("servicePrincipalType", "")).lower()
         if sp_type == "managedidentity" or "managed identity" in str(d.get("displayName", "")).lower():
             node.tags.add("managed_identity")
-        # Foreign-tenant SP: app registration lives in another tenant - you cannot
+        # Foreign-tenant SP: app registration lives in another tenant, you cannot
         # add a credential and authenticate as it (avoids the classic false positive).
         owner_org = d.get("appOwnerOrganizationId")
         node.props["_owner_org"] = owner_org
@@ -212,7 +225,7 @@ def _load_relationship(g: Graph, kind: str, d: dict[str, Any]) -> None:
     # activation duration, and whether eligibility may be permanent. Attached to the role
     # node so a rule can flag a Tier-0 role with a weak policy. If the role currently has no
     # active holder it has no node yet; create one for a KNOWN Tier-0 role so its (often the
-    # most important) policy is still assessable - a non-Tier-0 role with no node is skipped.
+    # most important) policy is still assessable, a non-Tier-0 role with no node is skipped.
     elif kind == "AZRoleManagementPolicy":
         rid = d.get("roleDefinitionId")
         node = g.node(_role_node_for(g, rid) or "") if rid else None
@@ -237,7 +250,7 @@ def _load_relationship(g: Graph, kind: str, d: dict[str, Any]) -> None:
         # `appRoles` comes from the SP's own record and lists the permissions the app
         # PUBLISHES. Appending grants to the same list conflated the two, so every
         # consumer treated Microsoft Graph's 707 published permissions as permissions
-        # Graph had been granted - fabricating 138 escalation edges, 13% of all attack
+        # Graph had been granted, fabricating 138 escalation edges, 13% of all attack
         # paths, and the nonsense finding "Microsoft Graph can grant Global Administrator".
         for ra in (d.get("appRoleAssignments") or [d]):
             spid = ra.get("principalId") or ra.get("servicePrincipalId") or d.get("appId")
@@ -245,7 +258,7 @@ def _load_relationship(g: Graph, kind: str, d: dict[str, Any]) -> None:
             role_id = str(ra.get("appRoleId") or "").lower()
             # Resolve the role's name: the caller's own value, then the static Graph map,
             # then the resource SP's published appRoles (exact and free), and finally the
-            # raw GUID. Never drop the grant - the previous `and value` guard discarded
+            # raw GUID. Never drop the grant, the previous `and value` guard discarded
             # 576 of 710 grants, i.e. every non-Graph resource and every unmapped GUID.
             value = ra.get("appRoleValue") or C.GRAPH_APP_ROLE_IDS.get(role_id)
             if not value and resource_id:
@@ -265,7 +278,7 @@ def _load_relationship(g: Graph, kind: str, d: dict[str, Any]) -> None:
                 # Also emit the graph edge. EdgeType.HAS_APP_ROLE had three consumers in
                 # facts.py and no producer anywhere, so app_role_grant_spread was always
                 # [] and the "app" anomaly scanner emitted zero signals for ALL sixteen
-                # specialists - three of which list "app" as a signal source.
+                # specialists, three of which list "app" as a signal source.
                 if resource_id:
                     _edge(g, node.id, resource_id, EdgeType.HAS_APP_ROLE,
                           evidence={"value": value})
@@ -305,7 +318,7 @@ def _load_relationship(g: Graph, kind: str, d: dict[str, Any]) -> None:
     elif kind in _FLAT_RBAC_KINDS:
         role = _FLAT_RBAC_KINDS[kind]
         is_sub = kind.startswith("AZSubscription")
-        # Format A: simple flat record - SourceID/source/principalId → TargetID/target/resourceId.
+        # Format A: simple flat record, SourceID/source/principalId → TargetID/target/resourceId.
         src = (d.get("SourceID") or d.get("source") or d.get("sourceId")
                or d.get("principalId") or d.get("objectId"))
         dst = (d.get("TargetID") or d.get("target") or d.get("targetId")
@@ -344,7 +357,7 @@ def _load_relationship(g: Graph, kind: str, d: dict[str, Any]) -> None:
                             if pid:
                                 principal_id = str(pid)
                                 # Only use properties.scope when it's a real resource path
-                                # (not "/" which means tenant-root - fall through to item ID).
+                                # (not "/" which means tenant-root, fall through to item ID).
                                 raw_scope = (props.get("scope") or "").strip("/")
                                 if raw_scope:
                                     scope = props.get("scope")
@@ -401,7 +414,7 @@ def _load_relationship(g: Graph, kind: str, d: dict[str, Any]) -> None:
     elif kind == "AZOAuth2GrantDelegated":
         # Delegated (on-behalf-of) MS Graph permission grant. Record the granted
         # scopes on the client service principal so a rule can flag dangerous
-        # tenant-wide (admin-consented) delegated permissions - the illicit-consent
+        # tenant-wide (admin-consented) delegated permissions, the illicit-consent
         # surface AzureHound's app-role-only view misses.
         client_id = d.get("clientId")
         n = g.node(g.resolve_id(client_id) or "") if client_id else None
@@ -477,7 +490,7 @@ def _load_containment(g: Graph, kind: str, d: dict[str, Any]) -> None:
     if kind == "AZManagementGroupDescendant":
         # AzureHound puts the parent management group at properties.parent.id and the
         # child (a subscription or a nested MG) at the top-level id. Reading
-        # managementGroupId/parentId - neither of which the record contains - resolved
+        # managementGroupId/parentId, neither of which the record contains, resolved
         # the parent to None, so _edge returned early and the ENTIRE management-group
         # tree was silently absent from the graph. That removed the blast radius of
         # every MG-scoped role: an MG Owner applies to all descendant subscriptions,
@@ -498,7 +511,7 @@ def _edge(g: Graph, src: str | None, dst: str | None, etype: EdgeType, *,
         return
     # Resolve each endpoint case-insensitively FIRST. AzureHound refers to the same
     # object with different casing across record types, so matching exactly created a
-    # synthetic placeholder alongside the real node - e.g. all 1,243 subscription→
+    # synthetic placeholder alongside the real node, e.g. all 1,243 subscription→
     # resource-group CONTAINS edges pointed at phantom /subscriptions/<guid> nodes
     # while the real subscription was /SUBSCRIPTIONS/<GUID>, breaking the hierarchy.
     src = g.resolve_id(src) or src

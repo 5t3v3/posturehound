@@ -1,14 +1,14 @@
 """Microsoft Graph collector for identity-plane config (PostureHound v2, Track B).
 
 AzureHound and Azure Resource Graph both miss the tenant's identity *security
-posture* - Conditional Access policy state, MFA enforcement, legacy-auth blocking,
+posture*, Conditional Access policy state, MFA enforcement, legacy-auth blocking,
 security defaults. This module reads it from Microsoft Graph using the same
 service-principal client-credentials flow as azure_arg, with the Graph scope.
 
 Note on permissions: the ARM Reader role does NOT grant Graph access. For this
 collector the service principal additionally needs the Graph application
 permission Policy.Read.All (admin-consented). Without it Graph returns 403 and
-this collector records "not collected" - never a false pass.
+this collector records "not collected", never a false pass.
 
 Same contract as azure_arg: injectable HTTP (tested with httpx.MockTransport),
 graceful when unconfigured, never raises into a scan.
@@ -31,12 +31,45 @@ _MAX_PAGES = 100
 class GraphResult:
     ca_policies: list[dict] = field(default_factory=list)
     security_defaults_enabled: "bool | None" = None
+    authorization_policy: "dict | None" = None   # /policies/authorizationPolicy (user-consent)
     collected: dict[str, bool] = field(default_factory=dict)   # endpoint -> succeeded
     errors: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return any(self.collected.values())
+
+
+# Collection record kinds that carry identity-plane config, so an uploaded (or demo)
+# collection can drive the identity-config rules deterministically, exactly as a live Graph
+# collection does. A live AzureHound dump never contains these, so adding them is additive.
+CA_POLICY_KIND = "AZConditionalAccessPolicy"
+SECURITY_DEFAULTS_KIND = "AZSecurityDefaults"
+AUTHORIZATION_POLICY_KIND = "AZAuthorizationPolicy"
+
+
+def graph_result_from_records(records: "list[dict]") -> "GraphResult | None":
+    """Build a GraphResult from ingested identity-config records, so `run_graph_rules` can
+    assess a FILE collection (and the bundled demo), not only a live Microsoft Graph pull.
+    Returns None when the collection carries no identity-config records at all (so a plain
+    AzureHound dump is unaffected and the live path is unchanged)."""
+    ca = [r.get("data") for r in records if r.get("kind") == CA_POLICY_KIND]
+    sd = [r.get("data") for r in records if r.get("kind") == SECURITY_DEFAULTS_KIND]
+    ap = [r.get("data") for r in records if r.get("kind") == AUTHORIZATION_POLICY_KIND]
+    if not (ca or sd or ap):
+        return None
+    gr = GraphResult()
+    if ca:
+        gr.ca_policies = [c for c in ca if isinstance(c, dict)]
+        gr.collected["conditionalAccess"] = True
+    if sd:
+        d0 = next((d for d in sd if isinstance(d, dict)), {})
+        gr.security_defaults_enabled = bool(d0.get("isEnabled"))
+        gr.collected["securityDefaults"] = True
+    if ap:
+        gr.authorization_policy = next((d for d in ap if isinstance(d, dict)), None)
+        gr.collected["authorizationPolicy"] = True
+    return gr
 
 
 def _default_client():
@@ -81,7 +114,7 @@ def _get_all(token: str, url: str, client) -> list[dict]:
 
 def probe(creds: "ArgCredentials | None" = None, *, client=None) -> dict:
     """Validate the SP's Microsoft Graph access: authenticate and read one
-    Conditional Access policy page. Returns {ok, message} - never raises. This is
+    Conditional Access policy page. Returns {ok, message}, never raises. This is
     a DIFFERENT permission from ARM Reader (it needs Policy.Read.All), so it is
     checked separately from the Resource Graph probe."""
     creds = creds or credentials_from_settings()
@@ -98,8 +131,8 @@ def probe(creds: "ArgCredentials | None" = None, *, client=None) -> dict:
             policies = _get_all(token, f"{_GRAPH}/identity/conditionalAccess/policies", client)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "message": "Authenticated, but reading Conditional Access "
-                    f"failed - grant the SP Policy.Read.All and admin-consent it ({e})"}
-        return {"ok": True, "message": f"Microsoft Graph OK - {len(policies)} Conditional "
+                    f"failed, grant the SP Policy.Read.All and admin-consent it ({e})"}
+        return {"ok": True, "message": f"Microsoft Graph OK, {len(policies)} Conditional "
                 "Access policy(ies) readable."}
     finally:
         if owns:
@@ -152,6 +185,18 @@ def collect(creds: "ArgCredentials | None" = None, *, client=None,
         except Exception as e:  # noqa: BLE001
             result.collected["securityDefaults"] = False
             result.errors.append(f"security defaults policy: {e}")
+        # Tenant authorization policy, governs whether ordinary users may consent to apps
+        # (CIS 1.11, the illicit-consent / OAuth-phishing surface). Readable with Policy.Read.All.
+        try:
+            resp = _send_with_retry(lambda: client.get(
+                f"{_GRAPH}/policies/authorizationPolicy",
+                headers={"Authorization": f"Bearer {token}"}))
+            result.authorization_policy = resp.json()
+            result.collected["authorizationPolicy"] = True
+            _log("[Graph] Authorization (user-consent) policy collected.")
+        except Exception as e:  # noqa: BLE001
+            result.collected["authorizationPolicy"] = False
+            result.errors.append(f"authorization policy: {e} (grant the SP Policy.Read.All)")
         return result
     finally:
         if owns:

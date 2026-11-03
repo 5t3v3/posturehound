@@ -1,4 +1,4 @@
-"""Deterministic fact extraction - the ground truth the AI reasons over.
+"""Deterministic fact extraction, the ground truth the AI reasons over.
 
 This module is the boundary between "exact and scalable" and "judgement and
 narrative." It never guesses: every fact here is derived mechanically from the
@@ -58,19 +58,19 @@ class FactPack:
     hygiene_issues: list[dict] = field(default_factory=list)
     pim_eligible_shadow_admins: list[dict] = field(default_factory=list)
     container_exposure: list[dict] = field(default_factory=list)
-    # Live Azure Resource Graph + Microsoft Graph findings (v2 Track B) - network,
+    # Live Azure Resource Graph + Microsoft Graph findings (v2 Track B), network,
     # database, container, cache, AI-service and Conditional-Access exposure that
     # AzureHound cannot see. Populated from the deterministic ARG/IDG findings so
     # the AI specialists reason over the tenant's full attack surface, not just the
     # identity graph. Empty when no Reader service principal is configured.
     external_exposure: list[dict] = field(default_factory=list)
     # Complete role-assignment inventories (not pre-filtered to known-bad).
-    # The AI needs full visibility to detect non-standard posture - anomalies that
+    # The AI needs full visibility to detect non-standard posture, anomalies that
     # no individual rule can enumerate, like "47 users have Contributor on production".
     subscription_rbac_all: list[dict] = field(default_factory=list)   # every RBAC assignment at sub/MG scope
     entra_role_all: list[dict] = field(default_factory=list)           # every Entra role assignment
     service_principal_inventory: list[dict] = field(default_factory=list)  # all SPs ranked by permission count
-    # Breadth / anomaly-detection signals - statistical aggregations
+    # Breadth / anomaly-detection signals, statistical aggregations
     broad_access_signals: dict = field(default_factory=dict)
     # Management-group hierarchy: MG id -> every descendant subscription id, resolved
     # transitively through nested MGs. This is what turns "Owner at MG scope" into a
@@ -78,7 +78,7 @@ class FactPack:
     # single most important cross-subscription primitive in Azure RBAC.
     mg_descendant_subscriptions: dict[str, list[str]] = field(default_factory=dict)
     # Cross-subscription bridges: principals that can reach two or more subscriptions over
-    # the FULL escalation graph - directly, or inherited through a group, an owned service
+    # the FULL escalation graph, directly, or inherited through a group, an owned service
     # principal, a PIM-eligible role, or any escalation chain. This is the cross-subscription
     # attack surface as an attacker actually crosses it, not just direct multi-sub RBAC.
     # Every specialist that reasons about privilege sees it, so cross-subscription blast
@@ -94,7 +94,7 @@ class FactPack:
     raw_group_list:     list[dict] = field(default_factory=list, repr=False)
     raw_app_grant_list: list[dict] = field(default_factory=list, repr=False)
     # Complete multi-hop attack paths from non-privileged principals to tier-0 targets.
-    # Built by _build_attack_paths() - the graph traversal flat-list scanning cannot do.
+    # Built by _build_attack_paths(), the graph traversal flat-list scanning cannot do.
     raw_attack_paths:    list[dict] = field(default_factory=list, repr=False)
     attack_paths_capped: bool       = field(default=False)
 
@@ -131,7 +131,7 @@ class FactPack:
         ],
         # Tenant-configuration baseline. Same identity core as `identity`, PLUS the live
         # Track-B controls (Conditional Access, security defaults, legacy auth) that arrive
-        # as IDG-*/ARG-* rows in external_exposure - so the "absent controls" specialist can
+        # as IDG-*/ARG-* rows in external_exposure, so the "absent controls" specialist can
         # actually reason over whether the expected controls are present when they WERE
         # collected, instead of being told they are always uncollectable.
         "tenant_config": [
@@ -294,7 +294,7 @@ _PATH_EDGE_TYPES = frozenset({
 
 def _build_attack_paths(g: "Graph", fp: "FactPack",
                         max_hops: int = 6, max_paths: int = 2000) -> "list[dict]":
-    """Reverse BFS from all tier-0 targets - find non-privileged principals that
+    """Reverse BFS from all tier-0 targets, find non-privileged principals that
     can reach tier-0 within max_hops steps via the derived abuse edges.
 
     This is the graph traversal capability that flat-list scanning cannot provide:
@@ -303,7 +303,7 @@ def _build_attack_paths(g: "Graph", fp: "FactPack",
     """
     from collections import deque
 
-    # Group member count lookup - built from raw_group_list which is populated before this runs.
+    # Group member count lookup, built from raw_group_list which is populated before this runs.
     # Used to add blast-radius bonus: a path through a 500-member group is more severe than
     # one through a 2-member group because more principals are implicitly affected.
     _group_mc: "dict[str, int]" = {grp["id"]: grp["member_count"] for grp in fp.raw_group_list}
@@ -315,7 +315,7 @@ def _build_attack_paths(g: "Graph", fp: "FactPack",
         if "tier0" in n.tags:
             tier0_ids.add(n.id)
             for e in g.out_edges(n.id, EdgeType.EFFECTIVE_ROLE):
-                tier0_ids.add(e.dst)   # role node - CAN_GRANT_ROLE points here
+                tier0_ids.add(e.dst)   # role node, CAN_GRANT_ROLE points here
     if not tier0_ids:
         return []
 
@@ -367,7 +367,7 @@ def _build_attack_paths(g: "Graph", fp: "FactPack",
 
                 # Record path when source is a non-tier0 user or SP.
                 # When the first hop is group membership (User→MemberOf→Group→...),
-                # use the GROUP as the effective source - all members share the same
+                # use the GROUP as the effective source, all members share the same
                 # dedup key, collapsing N per-member findings into one group-level one.
                 if "tier0" not in up_node.tags and up_node.kind in (
                     NodeKind.USER, NodeKind.SERVICE_PRINCIPAL,
@@ -481,7 +481,7 @@ def build_fact_pack(g: Graph) -> FactPack:
     for n in t0:
         # Resolve role names through the role node, dedupe, and DISCLOSE the cap. The
         # previous version emitted the raw evidence value (a GUID for Entra roles) and
-        # truncated an undeduplicated list to 5 - so a Global Admin holding 12 Tier-0
+        # truncated an undeduplicated list to 5, so a Global Admin holding 12 Tier-0
         # roles rendered as ["Owner","Owner","Owner","Owner","Owner"], hiding the rest.
         via_all: list[str] = []
         for e in g.out_edges(n.id):
@@ -523,7 +523,7 @@ def build_fact_pack(g: Graph) -> FactPack:
             "evidence": {k: v for k, v in (e.evidence or {}).items() if k in
                          ("role", "scope", "permissions", "resource", "value", "identityType")},
         })
-    # Prioritise edges that actually reach Tier-0 - those are the ones that matter most.
+    # Prioritise edges that actually reach Tier-0, those are the ones that matter most.
     # Order: Tier-0 destinations first, then identity primitives ahead of resource-plane
     # sinks, so a cap can only ever drop the least consequential rows.
     esc.sort(key=lambda x: (
@@ -543,7 +543,7 @@ def build_fact_pack(g: Graph) -> FactPack:
         has_federated = bool(n.props.get("federatedIdentityCredentials"))
         is_foreign = "foreign_tenant" in n.tags
         is_managed_identity = n.props.get("servicePrincipalType") == "ManagedIdentity"
-        # Delegated (on-behalf-of) OAuth2 grants - the illicit-consent surface that an
+        # Delegated (on-behalf-of) OAuth2 grants, the illicit-consent surface that an
         # app-role-only view misses. Tenant-wide (admin-consented) grants apply to every
         # user, so a dangerous delegated scope there is a real escalation vector. Surfaced
         # here so the entitlement/delegation specialist can reason over the actual scopes,
@@ -586,8 +586,8 @@ def build_fact_pack(g: Graph) -> FactPack:
     guests = []
     for n in g.nodes_of_kind(NodeKind.USER):
         if n.props.get("userType") == "Guest":
-            # HAS_ENTRA_ROLE edges carry evidence {"roleTemplateId": ...} - never a
-            # "role" key - so reading evidence["role"] alone produced [None, ...] for
+            # HAS_ENTRA_ROLE edges carry evidence {"roleTemplateId": ...}, never a
+            # "role" key, so reading evidence["role"] alone produced [None, ...] for
             # every guest. The guard below still passed (a list of Nones is truthy) but
             # the rendered list was always empty, hiding e.g. a guest holding Billing
             # Administrator. Resolve through the role node, as tier0_via/entra_role_all do.
@@ -618,7 +618,7 @@ def build_fact_pack(g: Graph) -> FactPack:
         # Tri-state, not boolean. Azure omits these flags when off, so `is False` was
         # always False and the pack affirmatively told the AI
         # "purge_protection_disabled": false for 144 vaults that have NO purge protection
-        # and "legacy_access_policy_model": false for 18 vaults that ARE on it - the
+        # and "legacy_access_policy_model": false for 18 vaults that ARE on it, the
         # dangerous direction of absent-data-as-fact, on exactly the fields the data-plane
         # and misconfiguration prompts ask about.
         _soft = props.get("enableSoftDelete")
@@ -744,7 +744,7 @@ def build_fact_pack(g: Graph) -> FactPack:
         fp.truncated["pim_eligible_shadow_admins"] = trunc
 
     # ---- Complete RBAC inventory at subscription / MG scope -----------------
-    # Every assignment (not filtered) - the AI needs the full list to reason
+    # Every assignment (not filtered), the AI needs the full list to reason
     # about breadth, outliers, and non-standard posture.
     rbac_all: list[dict] = []
     for e in g.edges():
@@ -756,7 +756,7 @@ def build_fact_pack(g: Graph) -> FactPack:
         # version compared path segments case-SENSITIVELY against "subscriptions" /
         # "managementGroups", but AzureHound emits ARM paths in upper case
         # (/SUBSCRIPTIONS/..., /PROVIDERS/MICROSOFT.MANAGEMENT/MANAGEMENTGROUPS/...).
-        # On a real 85,693-assignment tenant that matched just 981 rows - 1.1% - and
+        # On a real 85,693-assignment tenant that matched just 981 rows, 1.1%, and
         # dropped every one of the 554 management-group assignments, which are the
         # single most important cross-subscription primitive (an MG role applies to all
         # child subscriptions at once).
@@ -788,7 +788,7 @@ def build_fact_pack(g: Graph) -> FactPack:
     # by role and then truncating meant the 3,000 delivered rows were entirely the
     # alphabetically-first role: on a real tenant, 3,000 Contributor rows covering 3 of
     # 140 principals, with ZERO of the 24,142 Owner and 12,020 User Access Administrator
-    # assignments - while the prompt told the model this was "EVERY RBAC assignment".
+    # assignments, while the prompt told the model this was "EVERY RBAC assignment".
     #
     # Collapsing per (principal, role) removes the need for a cap at all: 75,437
     # assignments become ~240 rows carrying strictly more information, because the
@@ -870,21 +870,21 @@ def build_fact_pack(g: Graph) -> FactPack:
     # appRoles list the permissions they *define*, not ones they've been *granted*.
     # Foreignness comes from the `foreign_tenant` tag (normalize.py), which compares
     # appOwnerOrganizationId against THIS tenant's GUID. Testing mere presence of that
-    # field - as this once did - also excluded tenant-owned SPs, which carry it set to
+    # field, as this once did, also excluded tenant-owned SPs, which carry it set to
     # the home tenant GUID; that silently dropped hundreds of real SPs (including
     # credentialed SSO/federation apps) from the inventory the scanners call complete.
     sp_inventory: list[dict] = []
     for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
         if "foreign_tenant" in sp.tags:
-            continue  # MS-owned or another tenant's SP - not tenant-created
+            continue  # MS-owned or another tenant's SP, not tenant-created
         perms = [r.get("value") for r in (sp.props.get("_granted_app_roles") or []) if r.get("value")]
         cred_count = (len(sp.props.get("passwordCredentials") or []) +
                       len(sp.props.get("keyCredentials") or []))
         fed_creds = sp.props.get("federatedIdentityCredentials") or []
         owners = [e.src for e in g.in_edges(sp.id, EdgeType.OWNS)]
         # appRoleAssignmentRequired: when True only explicitly assigned users can sign in.
-        # When False (the default) any tenant user - including ex-employees whose accounts
-        # haven't been disabled - can authenticate through the app.
+        # When False (the default) any tenant user, including ex-employees whose accounts
+        # haven't been disabled, can authenticate through the app.
         assignment_required = sp.props.get("appRoleAssignmentRequired")
         sp_inventory.append({
             "id": sp.id,
@@ -936,7 +936,7 @@ def build_fact_pack(g: Graph) -> FactPack:
             privileges.append({"primitive": e.type.value, "target": _ent(g, e.dst), "evidence": ev})
         ent = fp.register(_ent(g, grp.id))
         # Dynamic membership is signalled by a non-empty membershipRule (AzureHound does NOT
-        # emit a "membershipType" key - reading it left is_dynamic ALWAYS False, so no dynamic
+        # emit a "membershipType" key, reading it left is_dynamic ALWAYS False, so no dynamic
         # privileged group was ever flagged). normalize also tags the node dynamic_membership.
         is_dynamic = bool((grp.props.get("membershipRule") or "").strip()) or "dynamic_membership" in grp.tags
         large_priv_groups.append({
@@ -950,7 +950,7 @@ def build_fact_pack(g: Graph) -> FactPack:
     large_priv_groups.sort(key=lambda x: -x["member_count"])
 
     # 2. RBAC role spread: per role, how many distinct principals hold it at
-    #    subscription or management-group scope - a high count is anomalous
+    #    subscription or management-group scope, a high count is anomalous
     rbac_role_spread: dict[str, int] = {}
     for e in g.edges():
         if e.type != EdgeType.HAS_RBAC_ROLE:
@@ -960,7 +960,7 @@ def build_fact_pack(g: Graph) -> FactPack:
         if not role:
             continue
         # Only count broad scopes (subscription level or above, not resource-group level).
-        # Same case-sensitivity trap as the rbac_all filter above - use the shared helper.
+        # Same case-sensitivity trap as the rbac_all filter above, use the shared helper.
         if not (scope in ("/", "") or C.is_at_broad_scope(scope)):
             continue
         rbac_role_spread[role] = rbac_role_spread.get(role, 0) + 1
@@ -989,7 +989,7 @@ def build_fact_pack(g: Graph) -> FactPack:
     )
 
     # 4. Broadly-assigned Graph app permissions: per permission, how many TENANT-OWNED SPs hold it.
-    #    MS first-party / other-tenant SPs are excluded - their appRoles list what they
+    #    MS first-party / other-tenant SPs are excluded, their appRoles list what they
     #    *define*, not what they've been *granted*. Counting them would inflate every number.
     #    Uses the `foreign_tenant` tag, not the raw presence of appOwnerOrganizationId,
     #    which would also exclude tenant-owned SPs (see the SP inventory note above).
@@ -1008,7 +1008,7 @@ def build_fact_pack(g: Graph) -> FactPack:
     }
 
     # 5. App-role grants to users/groups: which app roles have been granted to
-    #    many users or to large groups - "everyone has access to this app's admin role"
+    #    many users or to large groups, "everyone has access to this app's admin role"
     app_role_grant_spread: list[dict] = []
     _app_role_counts: dict[tuple, list] = {}
     for e in g.edges():
@@ -1077,7 +1077,7 @@ def build_fact_pack(g: Graph) -> FactPack:
         "management_group_reach_note": (
             "management_group_reach maps each management group to how many subscriptions "
             "sit beneath it (transitively). A role assignment at an MG scope applies to "
-            "EVERY one of those subscriptions at once - cite this number when scoring the "
+            "EVERY one of those subscriptions at once, cite this number when scoring the "
             "blast radius of an MG-scoped Owner / User Access Administrator."
         ),
         "note": (
@@ -1090,7 +1090,7 @@ def build_fact_pack(g: Graph) -> FactPack:
     if len(large_priv_groups) > 40:
         fp.truncated["large_privileged_groups"] = len(large_priv_groups) - 40
 
-    # ── Raw group list for Haiku - ALL groups with any privileged edges (no member-count floor) ──
+    # ── Raw group list for Haiku, ALL groups with any privileged edges (no member-count floor) ──
     raw_groups: list[dict] = []
     for grp in g.nodes_of_kind(NodeKind.GROUP):
         priv_edges = [e for e in g.out_edges(grp.id) if e.type in _PRIV_EDGE_TYPES]
@@ -1119,7 +1119,7 @@ def build_fact_pack(g: Graph) -> FactPack:
     raw_groups.sort(key=lambda x: -x["member_count"])
     fp.raw_group_list = raw_groups
 
-    # ── Raw app grant list for Haiku - ALL app role grants regardless of grantee count ──
+    # ── Raw app grant list for Haiku, ALL app role grants regardless of grantee count ──
     raw_app_grants: list[dict] = []
     _all_app_role_counts: dict[tuple, list] = {}
     for e in g.edges():
@@ -1148,10 +1148,10 @@ def build_fact_pack(g: Graph) -> FactPack:
         })
     fp.raw_app_grant_list = raw_app_grants
 
-    # ── Cross-subscription bridges - full-graph reach ───────────────────────
+    # ── Cross-subscription bridges, full-graph reach ───────────────────────
     # A principal is a bridge if it can reach two or more subscriptions, counting reach it
     # inherits through group membership, an owned service principal, PIM eligibility, or any
-    # escalation chain - not only RBAC placed directly on it. Every privilege-reasoning
+    # escalation chain, not only RBAC placed directly on it. Every privilege-reasoning
     # specialist sees this, so a finding on such a principal is scored with its true
     # cross-subscription blast radius instead of being read as a single-subscription issue.
     try:
@@ -1192,13 +1192,13 @@ def build_fact_pack(g: Graph) -> FactPack:
                     "an owned service principal, PIM eligibility, or an escalation chain). "
                     "Treat multi-subscription reach as a severity amplifier: a finding on one "
                     "of these principals is a cross-subscription attack, not a single-scope "
-                    "issue - say which subscriptions fall together when it is compromised."
+                    "issue, say which subscriptions fall together when it is compromised."
                 )
             })
     except Exception:
         fp.cross_subscription_bridges = []
 
-    # ── Multi-hop attack paths - graph traversal ────────────────────────────
+    # ── Multi-hop attack paths, graph traversal ────────────────────────────
     # Must run AFTER all other sections so entity_index is fully populated
     # for the grounding-registration calls inside _build_attack_paths.
     fp.raw_attack_paths = _build_attack_paths(g, fp)
@@ -1212,7 +1212,7 @@ def audit_fact_pack(g: Graph, fp: "FactPack") -> dict:
 
     Verifies the invariants that make the pack trustworthy as the AI's input:
       1. per-kind entity counts match the graph exactly,
-      2. no fabricated entities - every id in an entity position is a real graph node
+      2. no fabricated entities, every id in an entity position is a real graph node
          (ARM scope paths, which legitimately appear in evidence, are allowed),
       3. every escalation edge in the pack corresponds to a REAL edge between real nodes
          (a phantom edge would let the AI narrate an attack that does not exist),

@@ -5,8 +5,8 @@ assets. This builds, from the collected blobs, a browsable inventory (assets gro
 by category, each with a display name + a short detail) and a recommended Tier-0 list
 (the assets the deterministic engine would auto-detect as Tier-0, each with a reason).
 
-It runs only the cheap front of the pipeline - parse → build graph → expand effective
-roles → tag Tier-0 - never the full escalation derivation, so it stays fast.
+It runs only the cheap front of the pipeline, parse → build graph → expand effective
+roles → tag Tier-0, never the full escalation derivation, so it stays fast.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from .normalize import build_graph
 from .model import Graph, NodeKind, EdgeType
 from .derive import _expand_effective_roles, _tag_tier0, _is_tier0_role
 
-# Category display order + labels - principals first (the usual Tier-0 crown jewels),
+# Category display order + labels, principals first (the usual Tier-0 crown jewels),
 # then resources. Only categories with at least one asset are surfaced.
 _CATEGORY_ORDER: list[tuple[str, str]] = [
     (NodeKind.USER.value, "Users"),
@@ -108,7 +108,7 @@ def build_inventory(blobs: list[tuple[bytes, str]]) -> dict[str, Any]:
     """
     ing = ingest.parse_many(blobs)
     g = build_graph(ing)
-    # Cheap front of the pipeline only - enough to know what is Tier-0.
+    # Cheap front of the pipeline only, enough to know what is Tier-0.
     _expand_effective_roles(g)
     _tag_tier0(g)
 

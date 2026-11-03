@@ -3,7 +3,7 @@
 One entry per escalation primitive (the `primitive` / EdgeType value that derive.py stamps on
 an edge). It supplies:
   - weight:     traversal difficulty (lower = easier / more likely). Used for the cost-aware
-                "easiest path" - a 1-hop path over a hard edge can be less likely than a 2-hop
+                "easiest path", a 1-hop path over a hard edge can be less likely than a 2-hop
                 path over trivial ones.
   - why:        a plain explanation of the abuse, shown in the edge provenance panel.
   - conditions: extra pre-requisites an attacker needs (e.g. a compute foothold, a PIM activation).
@@ -21,7 +21,7 @@ DEFAULT_WEIGHT = 1.5
 PRIMITIVES: dict[str, dict] = {
     "EffectiveRole": {
         "title": "Holds directory role",
-        "why": "Already holds this directory role, directly or through group membership - no action needed to use it.",
+        "why": "Already holds this directory role, directly or through group membership, no action needed to use it.",
         "weight": 0.5, "conditions": [], "technique": "Valid privilege",
     },
     "CanAddMember": {
@@ -91,7 +91,7 @@ PRIMITIVES: dict[str, dict] = {
     },
     "EligibleForRole": {
         "title": "PIM-eligible for role",
-        "why": "Is eligible (via PIM) for this role and can self-activate it - a standing shadow-admin path.",
+        "why": "Is eligible (via PIM) for this role and can self-activate it, a standing shadow-admin path.",
         "weight": 2.0, "conditions": ["requires_pim_activation"], "technique": "PIM abuse",
     },
 }
@@ -109,31 +109,31 @@ RAW_RELATIONSHIPS: dict[str, str] = {
 }
 
 
-# Why each Tier-0 Entra role earns the label - shown as the justification in node details.
+# Why each Tier-0 Entra role earns the label, shown as the justification in node details.
 TIER0_ROLE_INFO: dict[str, str] = {
-    "global administrator": "Unrestricted control of the entire Entra tenant and Microsoft 365 - the top of the tenant.",
-    "privileged role administrator": "Can assign any directory role to anyone (including Global Administrator) - a direct path to full control.",
-    "privileged authentication administrator": "Can reset authentication methods / MFA for any user, including admins - account takeover of admins.",
-    "authentication administrator": "Can reset authentication methods / MFA for non-admin users - account takeover.",
+    "global administrator": "Unrestricted control of the entire Entra tenant and Microsoft 365, the top of the tenant.",
+    "privileged role administrator": "Can assign any directory role to anyone (including Global Administrator), a direct path to full control.",
+    "privileged authentication administrator": "Can reset authentication methods / MFA for any user, including admins, account takeover of admins.",
+    "authentication administrator": "Can reset authentication methods / MFA for non-admin users, account takeover.",
     "application administrator": "Can add credentials to any application or service principal and then authenticate as it, inheriting its access.",
     "cloud application administrator": "Can add credentials to applications/service principals and act as them (no on-prem proxy).",
     "user administrator": "Can create/manage users and reset passwords for many accounts, including some admins.",
-    "password administrator": "Can reset passwords for non-administrator accounts - account takeover.",
+    "password administrator": "Can reset passwords for non-administrator accounts, account takeover.",
     "security administrator": "Can read and manage tenant security settings and policies across the estate.",
-    "conditional access administrator": "Can change Conditional Access policies - e.g. disable MFA or location controls - weakening tenant-wide auth.",
-    "exchange administrator": "Full control of Exchange Online - mailboxes, transport rules, delegation.",
+    "conditional access administrator": "Can change Conditional Access policies, e.g. disable MFA or location controls, weakening tenant-wide auth.",
+    "exchange administrator": "Full control of Exchange Online, mailboxes, transport rules, delegation.",
     "sharepoint administrator": "Full control of SharePoint/OneDrive content across the tenant.",
-    "intune administrator": "Can push scripts and configuration to managed devices - code execution on endpoints.",
-    "hybrid identity administrator": "Controls directory synchronization / on-prem federation - can forge or sync cloud identities.",
-    "directory synchronization accounts": "The Entra Connect sync identity - effectively writes to the directory; abused for privilege escalation.",
-    "domain name administrator": "Can manage custom domains and federation settings - enables federation-trust takeover.",
+    "intune administrator": "Can push scripts and configuration to managed devices, code execution on endpoints.",
+    "hybrid identity administrator": "Controls directory synchronization / on-prem federation, can forge or sync cloud identities.",
+    "directory synchronization accounts": "The Entra Connect sync identity, effectively writes to the directory; abused for privilege escalation.",
+    "domain name administrator": "Can manage custom domains and federation settings, enables federation-trust takeover.",
     "cloud device administrator": "Can manage devices, disable them, and read BitLocker recovery keys.",
     "partner tier2 support": "Legacy partner role with broad administrative privileges over the tenant.",
     "partner tier1 support": "Legacy partner role that can reset passwords / invalidate tokens for non-admins.",
 }
 
 RBAC_BROAD_TIER0_DESC = ("Owner / User Access Administrator at subscription or management-group scope can "
-                         "grant itself any role over every resource in that scope - full control of the resource plane.")
+                         "grant itself any role over every resource in that scope, full control of the resource plane.")
 CUSTOM_TIER0_DESC = "Added to the Tier-0 set by an analyst."
 
 
