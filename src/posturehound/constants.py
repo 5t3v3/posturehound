@@ -669,3 +669,31 @@ def is_at_broad_scope(scope: str | None) -> bool:
     if s.startswith("/subscriptions/") and s.count("/") == 2:
         return True
     return False
+
+
+# Entra tenants that own Microsoft's OWN first-party applications (Azure Resource Manager,
+# App Service, Databricks, Azure Stack - AKS, ...). A service principal whose
+# appOwnerOrganizationId is one of these is a Microsoft platform app registered/consented by
+# the platform, NOT a third-party SaaS vendor, so the external-vendor rule must not treat it as
+# one. Matched against the SP's `_owner_org`, lower-cased and stripped of braces.
+MICROSOFT_FIRST_PARTY_TENANTS = frozenset({
+    "f8cdef31-a31e-4b4a-93e4-5f571e91255a",   # Microsoft Services (first-party apps)
+    "72f988bf-86f1-41af-91ab-2d7cd011db47",   # Microsoft corporate tenant
+    "33e01921-4d64-4f8c-a055-5bdaffd5e33d",   # AME
+})
+
+# Lower-cased substrings of an ARM resource id that mark a managed identity as one Azure itself
+# provisions and assigns broad roles to BY DESIGN (Defender for Cloud / MDC, Azure Policy Guest
+# Configuration, AKS cluster/node identities, Backup, Network Watcher). These are ARM paths and
+# resource-group names Azure creates, not user-chosen display names, so they are a robust signal.
+# A match means "assigned by the platform, verify do not remove", not "misconfigured".
+AZURE_PLATFORM_IDENTITY_MARKERS = (
+    "/providers/microsoft.security/",            # Defender for Cloud
+    "/securityoperators/",                       # Defender security operators
+    "/providers/microsoft.guestconfiguration/",  # Azure Policy guest configuration
+    "/providers/microsoft.containerservice/managedclusters/",  # AKS cluster identity
+    "/resourcegroups/mc_",                        # AKS node resource group
+    "/resourcegroups/defaultresourcegroup-",      # Policy / MDC default RG
+    "/resourcegroups/azurebackuprg_",             # Azure Backup
+    "/resourcegroups/networkwatcherrg",           # Network Watcher
+)

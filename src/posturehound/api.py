@@ -86,6 +86,8 @@ def _route_permission(method: str, path: str) -> "str | None":
         return "compliance"
     if p.startswith("/api/scans/") and p.endswith("/workitem"):
         return "ado"
+    if p.startswith("/api/scans/") and p.endswith("/simulate"):
+        return "findings"
     if method in ("POST", "PUT", "DELETE") and (p == "/api/settings" or p.startswith("/api/integrations/")):
         return "settings"
     if method == "POST" and (p.startswith("/api/assess/") or p.startswith("/api/collect/")):
@@ -539,6 +541,10 @@ def _attach_arg(result: dict, *, on_progress=None) -> None:
         cov["arg_status"] = "not collected"
         return
     findings, not_assessed = arg_rules.run_arg_rules(arg)
+    # Dedupe: if the uploaded collection already carried Azure Resource Graph rows, the engine
+    # has already emitted these ARG findings deterministically; don't add the live copy on top.
+    _have = {f.get("rule_id") for f in result.get("findings", []) if (f.get("rule_id") or "").startswith("ARG-")}
+    findings = [f for f in findings if f.get("rule_id") not in _have]
     result.setdefault("findings", []).extend(findings)
     result.setdefault("not_assessed", []).extend(not_assessed)
     cov["arg_status"] = (f"collected: {len(arg.subscription_ids)} subscription(s), "
@@ -584,6 +590,11 @@ def _attach_graph(result: dict, *, on_progress=None) -> None:
         cov["graph_status"] = "not collected"
         return
     findings, not_assessed = graph_rules.run_graph_rules(gr)
+    # Dedupe: if the uploaded collection already carried identity-config records, the engine
+    # has already emitted these IDG findings deterministically. Don't add the live copy on top
+    # (that would double-count IDG-00x); the ingested finding stands.
+    _have = {f.get("rule_id") for f in result.get("findings", []) if (f.get("rule_id") or "").startswith("IDG-")}
+    findings = [f for f in findings if f.get("rule_id") not in _have]
     result.setdefault("findings", []).extend(findings)
     result.setdefault("not_assessed", []).extend(not_assessed)
     if gr.ok:
@@ -1369,6 +1380,30 @@ def api_graph_blast_radius(scan_id: str, source: str, cap: int = 160):
     return JSONResponse(ag.to_elements(ag.blast_radius(source, cap=max(20, min(int(cap), 600)))))
 
 
+@app.get("/api/scans/{scan_id}/graph/blast-radius/summary")
+def api_graph_blast_summary(scan_id: str, source: str):
+    """Structured blast-radius SUMMARY (Workstream B): the single number the report and the
+    explorer share - reachable count, Tier-0 reached, tenant-takeover flag and counts by kind,
+    computed by paths.blast_radius on the derived model graph (not the viz subgraph), so every
+    surface agrees."""
+    blobs = store.get_raw_blobs(scan_id)
+    if not blobs:
+        raise HTTPException(status_code=404, detail="Scan raw collection not available.")
+    from . import ingest as _ing
+    from . import paths as _paths
+    from .derive import derive as _derive
+    from .normalize import build_graph as _build
+    g = _build(_ing.parse_many(blobs))
+    _derive(g)
+    br = _paths.blast_radius(g, source)
+    # Trim the potentially-large id lists; the UI needs the counts and the takeover flag.
+    br.pop("reachable", None)
+    scope = br.get("effective_scope")
+    if isinstance(scope, dict):
+        scope.pop("ids_by_kind", None)
+    return JSONResponse(br)
+
+
 @app.get("/api/scans/{scan_id}/graph/all-relations")
 def api_graph_all_relations(scan_id: str, source: str, cap: int = 300):
     """Every relationship reachable from `source` across ALL edge types (membership,
@@ -1691,6 +1726,46 @@ async def api_scan_get(scan_id: str):
     if not r:
         raise HTTPException(status_code=404, detail="Scan not found.")
     return JSONResponse(_with_statuses(r, scan_id))
+
+
+@app.post("/api/scans/{scan_id}/simulate")
+async def api_scan_simulate(scan_id: str, request: Request):
+    """What-if remediation (Workstream E1): recompute the posture on a COPY of the scan's graph
+    with a set of removals applied, and return before/after. Deterministic; the AI layer never
+    runs. Body: {"remove": [ <removal descriptor>, ... ]} (e.g. choke fix-plan step `.removal`)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    removals = (body or {}).get("remove") or []
+    blobs = store.get_raw_blobs(scan_id)
+    if not blobs:
+        raise HTTPException(status_code=404, detail="Scan raw collection not available for simulation.")
+    from . import ingest as _ing
+    from . import paths as _paths
+    from .normalize import build_graph as _build
+    g_pre = _build(_ing.parse_many(blobs))
+
+    def _summ(r: dict) -> dict:
+        a = r.get("analytics", {})
+        ex = a.get("exposure", {}) or {}
+        return {
+            "grade": r.get("score", {}).get("grade"),
+            "score": r.get("score", {}).get("score"),
+            "exposure_pct": ex.get("exposure_pct"),
+            "exposed": ex.get("exposed"),
+            "tenant_takeover_principals": ex.get("tenant_takeover_principals"),
+            "tier0_path_count": sum(1 for p in (r.get("attack_paths") or []) if p.get("critical")),
+            "attack_path_count": len(r.get("attack_paths") or []),
+            "findings": sum(1 for f in (r.get("findings") or [])
+                            if f.get("source") != "path_consolidation"),
+        }
+
+    # Baseline via the identical code path, so before/after differ only by the removals.
+    before = _paths.simulate(g_pre, [])
+    after = _paths.simulate(g_pre, removals)
+    return JSONResponse({"before": _summ(before), "after": _summ(after),
+                         "removed": removals, "removed_count": len(removals)})
 
 
 @functools.lru_cache(maxsize=16)
@@ -2233,16 +2308,61 @@ async def api_compare_scans(scan_id_a: str, scan_id_b: str):
     resolved = [fa[k] for k in fa if k not in fb]
     new = [fb[k] for k in fb if k not in fa]
     persisting = [fb[k] for k in fb if k in fa]
+    paths_diff = _attack_path_diff(a, b)      # E5
+    exa = (a.get("analytics", {}).get("exposure", {}) or {})
+    exb = (b.get("analytics", {}).get("exposure", {}) or {})
     return {
         "a": {"id": scan_id_a, "grade": a["score"]["grade"], "score": a["score"]["score"],
-              "created_at": a.get("_created_at"), "finding_count": len(fa)},
+              "created_at": a.get("_created_at"), "finding_count": len(fa),
+              "exposure_pct": exa.get("exposure_pct")},
         "b": {"id": scan_id_b, "grade": b["score"]["grade"], "score": b["score"]["score"],
-              "created_at": b.get("_created_at"), "finding_count": len(fb)},
+              "created_at": b.get("_created_at"), "finding_count": len(fb),
+              "exposure_pct": exb.get("exposure_pct")},
         "resolved": [{"title": f["title"], "severity": f["severity"]} for f in resolved],
         "new": [{"title": f["title"], "severity": f["severity"]} for f in new],
         "persisting_count": len(persisting),
         "score_delta": b["score"]["score"] - a["score"]["score"],
+        "paths": paths_diff,
+        "exposure_delta": (round((exb.get("exposure_pct") or 0) - (exa.get("exposure_pct") or 0), 1)
+                           if exa.get("exposure_pct") is not None and exb.get("exposure_pct") is not None
+                           else None),
+        "tenant_takeover_delta": ((exb.get("tenant_takeover_principals") or 0)
+                                  - (exa.get("tenant_takeover_principals") or 0)),
     }
+
+
+def _path_sig(p: dict) -> tuple:
+    """Identity of an attack path for cross-scan diff: (entry, target, primitive chain)."""
+    chain = tuple((h.get("primitive") or h.get("via") or "") for h in (p.get("hops") or []))
+    return (p.get("entry_id"), p.get("target_id"), chain)
+
+
+def _attack_path_diff(a: dict, b: dict) -> dict:
+    """New / removed / changed attack paths between two scans (PRD v2.1 Workstream E5)."""
+    pa = {_path_sig(p): p for p in (a.get("attack_paths") or [])}
+    pb = {_path_sig(p): p for p in (b.get("attack_paths") or [])}
+    pairs_a: dict[tuple, set] = {}
+    pairs_b: dict[tuple, set] = {}
+    for sig in pa:
+        pairs_a.setdefault(sig[:2], set()).add(sig)
+    for sig in pb:
+        pairs_b.setdefault(sig[:2], set()).add(sig)
+
+    def _row(p):
+        return {"entry": p.get("entry"), "target": p.get("target"),
+                "length": p.get("length"), "critical": p.get("critical")}
+
+    new = [_row(pb[s]) for s in pb if s[:2] not in pairs_a]
+    removed = [_row(pa[s]) for s in pa if s[:2] not in pairs_b]
+    # Changed: the (entry,target) exists in both but the primitive chain set differs.
+    changed = []
+    for pair in set(pairs_a) & set(pairs_b):
+        if pairs_a[pair] != pairs_b[pair]:
+            rep = pb[next(iter(pairs_b[pair]))]
+            changed.append(_row(rep))
+    return {"new": new, "removed": removed, "changed": changed,
+            "new_count": len(new), "removed_count": len(removed), "changed_count": len(changed),
+            "total_a": len(pa), "total_b": len(pb)}
 
 
 @app.get("/api/scans/{scan_id}/export.csv")

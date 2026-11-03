@@ -1632,6 +1632,9 @@ def create_message(client, **kwargs):
         kwargs["max_tokens"] = _cap
     if model in _NO_TEMPERATURE_MODELS:
         kwargs.pop("temperature", None)
+    # E4: redact tenant identifiers from the outbound prompt (no-op when no pseudonymiser active).
+    from . import pseudonymize as _pseudo
+    kwargs = _pseudo.redact_messages_kwargs(kwargs)
 
     def _rec(resp):
         try:
@@ -1736,7 +1739,8 @@ def _call_with_tools(client, model: str, system: str, user_msg: str,
         tool_uses = [b for b in resp.content if getattr(b, "type", None) == "tool_use"]
         for b in tool_uses:
             if isinstance(getattr(b, "input", None), dict):
-                collected.append((b.name, b.input))
+                from . import pseudonymize as _pseudo
+                collected.append((b.name, _pseudo.restore_obj(b.input)))
         # Capture the model's own reasoning (the text blocks it emits alongside its tool
         # calls) into the verbose trace, this is the "how the AI thought" content.
         if trace is not None:
@@ -3677,6 +3681,11 @@ def _cartographer_fallback_summary(path: dict) -> str:
     entry = (path.get("entry") or {}).get("name") or "the principal"
     target = (path.get("target") or {}).get("name") or "a privileged target"
     n = path.get("length") or 0
+    # Self-contained finding (the entity IS the objective, no onward escalation edge): a
+    # "Compromise of X exposes X" sentence is redundant, state the capability honestly instead.
+    if not n and (path.get("entry") or {}).get("id") == (path.get("target") or {}).get("id"):
+        return (f"Compromise of {entry} realises this finding's access directly; no onward "
+                f"escalation path was found in the graph.")
     if path.get("reaches_tier0"):
         tail = (f" reaches the Tier-0 target {target}" if n
                 else f" is the Tier-0 target {target}")

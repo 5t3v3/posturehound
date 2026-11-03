@@ -611,6 +611,23 @@ def strip_grouped_sps(finding: dict, heavy_ids: set) -> dict:
         nm = top.get("name") or top.get("id") or "the affected principal"
         lead = f"Concretely: an attacker who compromises {nm} ({kind}) realises this."
         g["attack_scenario"] = (lead + " " + base) if base else lead
+    # Max-impact path: if its representative entity was grouped out, re-point it to a SURVIVING
+    # affected entity so an individual finding's path always starts with an entity it still shows
+    # (never a grouped SP whose path belongs to its own group card).
+    mp = finding.get("max_impact_path")
+    if isinstance(mp, dict) and ne:
+        surviving_ids = {e.get("id") for e in ne if isinstance(e, dict)}
+        if (mp.get("entry") or {}).get("id") not in surviving_ids:
+            s = ne[0]
+            nb = {"id": s.get("id"), "name": s.get("name"),
+                  "kind": s.get("kind"), "tier0": False}
+            g["max_impact_path"] = {"entry": nb, "target": nb, "hops": [], "length": 0,
+                                    "reaches_tier0": False, "impact": mp.get("impact", 0)}
+            # The baked narrative named the grouped SP + its unrelated Tier-0 target; drop it so it
+            # cannot contradict the re-pointed path.
+            if finding.get("max_impact_summary"):
+                g["max_impact_summary"] = ""
+            g.pop("coherence_note", None)
     return g
 
 
@@ -650,6 +667,39 @@ def _apply_remediation_points(result: dict) -> None:
             g["remediation_points"] = remediation.points(g)
 
 
+def _normalize_self_contained_paths(result: dict) -> None:
+    """Guardrail: a SELF-CONTAINED finding (data-exfil Graph permissions - AZ-APP-014/017/020/
+    023/025/026/033) has no onward escalation; its impact IS the data access, so its max-impact
+    path must be a length-0 node objective on one of its OWN affected entities. Older scans (and
+    the AI coherence gate) sometimes baked a borrowed len>=1 path to an UNRELATED Tier-0 target
+    (the 'reaches Tier-0 in 1 step' contradiction), which persists because max-impact is not
+    recomputed on read. Collapse any such path here, at the finalize chokepoint, so it self-heals
+    on load and can never again render a path that contradicts the finding. Idempotent and cheap
+    (no graph needed)."""
+    from .scoring import _SELF_CONTAINED_RULES
+    for f in result.get("findings") or []:
+        if not isinstance(f, dict) or (f.get("rule_id") or "") not in _SELF_CONTAINED_RULES:
+            continue
+        mp = f.get("max_impact_path")
+        if not isinstance(mp, dict):
+            continue
+        entry, target = mp.get("entry") or {}, mp.get("target") or {}
+        if (mp.get("length") or 0) == 0 and entry.get("id") == target.get("id") \
+                and not mp.get("reaches_tier0"):
+            continue                                   # already a clean node objective
+        ents = [e for e in (f.get("entities") or []) if isinstance(e, dict) and e.get("id")]
+        if not ents:
+            continue
+        rep = ents[0]                                  # the finding's first affected entity (the card's representative)
+        nb = {"id": rep.get("id"), "name": rep.get("name"), "kind": rep.get("kind"), "tier0": False}
+        f["max_impact_path"] = {"entry": nb, "target": nb, "hops": [], "length": 0,
+                                "reaches_tier0": False, "impact": mp.get("impact", 0)}
+        f["max_impact_reaches_tier0"] = False
+        if f.get("max_impact_summary"):
+            f["max_impact_summary"] = ""               # the stale narrative named the unrelated target
+        f.pop("coherence_note", None)
+
+
 def finalize_findings(result: dict) -> dict:
     """The single authoritative consolidation of a scan's findings.
 
@@ -671,6 +721,9 @@ def finalize_findings(result: dict) -> dict:
     # group findings on the next read, and applies any change to the group shape (e.g. the
     # per-member evidence) to existing scans with no re-scan.
     _consolidate_sp_groups(result)
+    # Heal any self-contained finding whose baked max-impact path borrowed an unrelated Tier-0
+    # escalation (recomputed-free; reaches existing scans on read).
+    _normalize_self_contained_paths(result)
     # Proactive, review-first How-to-fix on every finding + group. Recomputed on every finalize,
     # so it reaches existing scans on read without a re-scan.
     _apply_remediation_points(result)
@@ -1216,7 +1269,10 @@ function postureStatement(){
  let s=`This tenant scores <b>${DATA.score.grade}</b> (${DATA.score.score}/100). `;
  s+=`${counts.Critical} critical and ${counts.High} high findings were identified across ${realF.length} active issues. `;
  s+=`${a.tier0.length} principals hold Tier-0 privilege. `;
- if(mi) s+=`The largest single escalation entry point is <b>${esc(mi.principal)}</b>, which can reach ${mi.reachable_privileged_count} privileged target(s). `;
+ const ex=a.exposure||{};
+ if(ex.entry_total) s+=`<b>${ex.exposure_pct}% exposure</b>: ${ex.exposed} of ${ex.entry_total} entry-point principals have at least one path to a Tier-0 target${ex.tenant_takeover_principals?`, ${ex.tenant_takeover_principals} of them to full tenant takeover`:''}. `;
+ if(mi&&mi.principal_id) s+=`The largest single escalation entry point is <b>${esc(mi.principal)}</b>, which can reach ${mi.reachable_privileged_count} privileged target(s). `;
+ else if(mi&&mi.reason) s+=esc(mi.reason)+' ';
  s+=`${bpF.length} best-practice recommendations are listed separately as low priority.`;
  return s;
 }
@@ -1290,7 +1346,7 @@ function renderOverview(){
    ['High',counts.High],['Active findings',realF.length],
    ['Best-practice',bpF.length],['Records analysed',DATA.ingest_summary.total_records]];
  const aiTag = DATA.ai_enabled ? `<span class="ai-tag">\u2726 AI summary \u00B7 ${esc(DATA.ai_model||'Haiku')}</span><br>` : '';
- const choke=(a.choke_points||[]).slice(0,6).map((c,i)=>`<div class="rankrow"><span class="ix">${i+1}</span><span class="nm">${esc(c.name)}</span><span class="v">${c.paths_through} links</span></div>`).join('')||'<div class="muted small">none</div>';
+ const choke=(a.choke_points||[]).slice(0,6).map((c,i)=>`<div class="rankrow"><span class="ix">${i+1}</span><span class="nm">${esc(c.name)}</span><span class="v">${c.pairs_on!=null?c.pairs_on+' paths':''}</span></div>`).join('')||'<div class="muted small">none</div>';
  const v=$('#view'); v.innerHTML=`
   ${scanHealthBanner()}
   ${aiBanner()}
@@ -1303,12 +1359,32 @@ function renderOverview(){
   <h2 class="section">Highest-impact exposure</h2>
   <div class="two">
    <div class="card maximpact"><div class="muted small">Maximum-impact entry point</div>
-     ${mi?`<div style="font-size:17px;font-weight:600;margin-top:4px">${esc(mi.principal)}</div>
-     <div class="path">${esc(mi.kind)} \u00B7 reaches ${mi.reachable_privileged_count} privileged target(s)${mi.already_tier0?' \u00B7 already Tier-0':''}</div>
-     <div class="small muted" style="margin-top:8px">Remediating the privileges of this principal removes the most exposure at once.</div>`:'<div class="muted">No escalation entry point reached privilege.</div>'}
+     ${(mi&&mi.principal_id)?`<div style="font-size:17px;font-weight:600;margin-top:4px">${esc(mi.principal)}</div>
+     <div class="path">${esc(mi.kind)} \u00B7 reaches ${mi.reachable_privileged_count} privileged target(s)</div>
+     <div class="small muted" style="margin-top:8px">Remediating the privileges of this principal removes the most exposure at once.</div>`:(mi&&mi.reason?`<div class="muted">${esc(mi.reason)}</div>`:'<div class="muted">No escalation entry point reached privilege.</div>')}
      ${(CROSSSUB.bridge_count||0)>0?`<div class="xsub-hi" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><span class="xsubbadge">\u21C4 ${CROSSSUB.bridge_count} cross-subscription bridge(s)</span> <span class="small muted">span ${CROSSSUB.subscription_count||0} subscription(s)${(function(){var t=(CROSSSUB.bridges||[]).filter(function(b){return b.reaches_tier0;}).length;return t?' \u00B7 '+t+' reach Tier-0':'';})()}, see Attack Paths</span></div>`:''}</div>
    <div class="card"><div class="muted small" style="margin-bottom:6px">Most-connected principals, priority remediation targets</div>${choke}</div>
   </div>
+  ${(function(){
+     const br=(a.blast_radius_top||[]).slice(0,6);
+     if(!br.length) return '';
+     const rows=br.map(b=>{
+       const kinds=Object.entries(b.counts_by_kind||{}).filter(([k,v])=>v).sort((x,y)=>y[1]-x[1]).slice(0,5)
+         .map(([k,v])=>`<span class="muted small">${v}×${esc(k.replace('AZ',''))}</span>`).join(' · ');
+       // Scans saved before reachable_count was added to this block would otherwise render
+       // "undefined reached"; fall back to summing the per-kind counts, and tolerate
+       // tier0_reached stored as either a count or the older id-array shape.
+       const reach=(b.reachable_count!=null)?b.reachable_count
+         :Object.values(b.counts_by_kind||{}).reduce((s,v)=>s+(+v||0),0);
+       const t0=Array.isArray(b.tier0_reached)?b.tier0_reached.length:(b.tier0_reached||0);
+       return `<div class="rankrow"><span class="nm">${esc(b.name)}</span>`
+         +(b.tenant_takeover?`<span class="badge gF" style="margin-left:6px">Tenant takeover</span>`:'')
+         +`<span class="v">${reach} reached${t0?` · ${t0} Tier-0`:''}</span>`
+         +`<div style="flex-basis:100%;margin-top:2px">${kinds}</div></div>`;
+     }).join('');
+     return `<h2 class="section">Blast radius, what falls if an entry point is compromised</h2>
+       <div class="card"><p class="muted small" style="margin:0 0 8px">Entry points ranked by what their compromise reaches: tenant takeover first, then Tier-0, then resources. One number, computed the same way as the graph explorer.</p>${rows}</div>`;
+   })()}
   <h2 class="section">Findings by category</h2>
   <div class="card">${catBreakdown()}</div>
   <h2 class="section">Assessment coverage</h2>
@@ -1498,6 +1574,18 @@ function _stripHeavySP(f, heavySet){
     const top=ne[0], nm=(top&&(top.name||top.id))||'the affected principal';
     const lead='Concretely: an attacker who compromises '+nm+' ('+kind+') realises this.';
     g.attack_scenario = base ? (lead+' '+base) : lead;
+  }
+  // If the max-impact path's representative was grouped out, re-point it to a surviving entity so an
+  // individual finding's path starts with an entity it still shows (never a grouped SP's path).
+  const mp=f.max_impact_path;
+  if(mp && typeof mp==='object' && ne.length){
+    const surviving=new Set(ne.map(e=>e.id));
+    if(!surviving.has((mp.entry||{}).id)){
+      const s=ne[0], nb={id:s.id,name:s.name,kind:s.kind,tier0:false};
+      g.max_impact_path={entry:nb,target:nb,hops:[],length:0,reaches_tier0:false,impact:mp.impact||0};
+      g.max_impact_summary='';          // drop the stale narrative that named the grouped SP + Tier-0
+      g.coherence_note='';
+    }
   }
   return g;
 }
@@ -2082,6 +2170,24 @@ function renderPaths(){
     <p class="muted small" style="margin:0 0 10px">Intermediate nodes appearing in the most attack paths. Hardening one severs every path that runs through it, so it removes the most risk per action taken.</p>
     ${chokeRows}
    </div>`:'';
+ // Greedy edge-cut fix plan (Workstream C): the ordered set of permission removals that
+ // severs the most (entry -> Tier-0) pairs per step, with cumulative coverage.
+ const FP=(DATA.analytics||{}).choke_fix_plan||[]; const FPT=(DATA.analytics||{}).choke_pairs_total||0;
+ const fpRows=FP.map(s=>`<div class="chokerow"><div class="chokehead">
+    <span class="ix">${s.step}</span>
+    <span style="font-weight:600">${esc(s.remediation)}</span>
+    <span class="badge gD" style="margin-left:auto">severs ${s.pairs_severed}</span>
+    <span class="muted small" style="margin-left:6px">${Math.round((s.share_severed||0)*100)}% cumulative</span>
+   </div></div>`).join('');
+ const canSim=!!(DATA._scan_id);
+ const fixPlanSection=FP.length?`<h2 class="section">Remediation fix plan, severing the most paths first</h2>
+   <div class="card" style="margin-bottom:14px">
+    <p class="muted small" style="margin:0 0 10px">A greedy edge cut over the ${FPT} (entry&nbsp;→&nbsp;Tier-0) path(s): each step removes the single permission that severs the most remaining paths. Apply in order; the cumulative column shows the share of all paths closed after each step.</p>
+    ${fpRows}
+    ${canSim?`<div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+      <button class="ghost" id="simplan" style="padding:5px 12px;font-size:12px">Simulate full fix plan</button>
+      <span id="simout" class="muted small"></span></div>`:''}
+   </div>`:'';
  v.innerHTML=`
   <div class="section-head"><h2>Attack Paths</h2>
    <p class="section-sub">The tenant's full privilege-escalation picture: each finding's maximum-impact route to its worst reachable target, the principals that bridge subscriptions, the consolidated multi-route source identities, and the chokepoints that sever the most paths per fix. Paths reaching Tier-0 are full tenant-takeover routes.</p></div>
@@ -2089,9 +2195,25 @@ function renderPaths(){
   ${miSection}
   ${csSection}
   ${consolSection}
-  ${chokeSection}`;
+  ${chokeSection}
+  ${fixPlanSection}`;
  qa('.finding',v).forEach(c=>{c.querySelector('.fhead').onclick=()=>c.classList.toggle('open'); wireFindingCopy(c);});
  qa('.pathconsolcard.expanded',v).forEach(pc=>{var pl=pc.querySelector('.pathlist');if(pl)pl.style.display='block';});
+ const simBtn=$('#simplan');
+ if(simBtn) simBtn.onclick=async()=>{
+   const plan=((DATA.analytics||{}).choke_fix_plan||[]);
+   const removals=plan.map(s=>s.removal).filter(Boolean);
+   const out=$('#simout'); out.textContent='Simulating…';
+   try{
+     const resp=await fetch(`/api/scans/${DATA._scan_id}/simulate`,{method:'POST',
+       headers:{'Content-Type':'application/json'},body:JSON.stringify({remove:removals})});
+     if(!resp.ok){out.textContent='Simulation unavailable ('+resp.status+').';return;}
+     const b=await resp.json();
+     out.innerHTML=`Before → after: exposure <b>${b.before.exposure_pct}% → ${b.after.exposure_pct}%</b> · `
+       +`Tier-0 paths ${b.before.tier0_path_count} → ${b.after.tier0_path_count} · `
+       +`grade ${b.before.grade} → ${b.after.grade} <span class="muted">(what-if, tenant unchanged)</span>`;
+   }catch(e){out.textContent='Simulation failed.';}
+ };
 }
 function tierRow(lbl,cls,n,tot){const pct=tot?Math.round(100*n/tot):0;return `<div class="qtr"><span class="qtl"><span class="tierbadge tb-${cls}">${lbl}</span></span><div class="qbar"><div class="qbfill tbf-${cls}" style="width:${pct}%"></div></div><span class="qtn">${n} · ${pct}%</span></div>`;}
 function pctCI(seg){if(!seg||!seg.labeled) return '<span class="muted">not yet labeled</span>';const p=Math.round(seg.precision*100);const lo=Math.round(seg.ci95[0]*100),hi=Math.round(seg.ci95[1]*100);return `<b>${p}%</b> <span class="muted small">(95% CI ${lo}–${hi}%, n=${seg.labeled})</span>`;}

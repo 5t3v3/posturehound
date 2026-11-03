@@ -41,6 +41,7 @@ class Category(str, Enum):
     STORAGE = "Storage & Data"
     HYGIENE = "Hygiene & Lifecycle"
     GUEST = "Guest & Cross-Tenant"
+    LOGGING = "Logging & Monitoring"
     ATTACK_PATH = "Attack Path"
     BEST_PRACTICE = "Best Practice"
 
@@ -67,6 +68,11 @@ class NodeKind(str, Enum):
     VMSS = "AZVMScaleSet"
     CONTAINER_REGISTRY = "AZContainerRegistry"
     UNKNOWN = "AZUnknown"
+    # Synthetic nodes (not collected; derived to make an escalation walkable).
+    GRANTABLE_APP_ROLE = "GrantableAppRole"  # the app role an AppRoleAssignment.ReadWrite.All SP can self-grant
+    TENANT_CONTROL = "TenantControl"         # tenant-wide control reached by any critical Tier-0 role
+    DATA_SINK = "DataSink"                    # a data-plane exfiltration objective (mail, files, sites, ...)
+    SECURITY_CONTROLS = "SecurityControls"    # the tenant's security controls, weakened by CanWeakenControls
 
 
 class EdgeType(str, Enum):
@@ -95,6 +101,13 @@ class EdgeType(str, Enum):
     CAN_READ_STORAGE_BLOB = "CanReadStorageBlob"
     CAN_PUSH_CONTAINER = "CanPushContainer"
     ELIGIBLE_FOR_ROLE = "EligibleForRole"
+    CONTROLS_TENANT = "ControlsTenant"   # a critical Tier-0 role -> the synthetic TenantControl node
+    # Graph application-permission primitives (Workstream D): the three semantic classes the 19
+    # formerly-unwalkable DANGEROUS_GRAPH_APP_ROLES primitives map to. The specific primitive
+    # (CanExfiltrateMail, CanFederateTenant, ...) is preserved on the edge's `primitive` field.
+    CAN_CONTROL_TENANT = "CanControlTenant"      # tenant-takeover prims -> critical role / TenantControl
+    CAN_WEAKEN_CONTROLS = "CanWeakenControls"    # control-weakening prims -> SecurityControls
+    CAN_EXFILTRATE_DATA = "CanExfiltrateData"    # data-plane prims -> a DataSink
 
 
 @dataclass

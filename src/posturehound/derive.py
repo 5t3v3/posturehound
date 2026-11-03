@@ -8,12 +8,62 @@ its evidence and the named primitive, and the logic is conservative.
 from __future__ import annotations
 
 from . import constants as C
-from .model import Edge, EdgeType, Graph, NodeKind
+from .model import Edge, EdgeType, Graph, Node, NodeKind
+
+# Synthetic node id for the grantable app role an AppRoleAssignment.ReadWrite.All SP can
+# assign itself. Shared across every such SP so the graph stays compact; see
+# _derive_app_role_escalation's CanGrantAppRole branch.
+_GRANTABLE_ROLE_NODE = "AppRole:RoleManagement.ReadWrite.Directory"
+
+# Workstream D: map every DANGEROUS_GRAPH_APP_ROLES primitive to a walkable edge + objective.
+# Bespoke primitives have their own target logic (reach specific Tier-0 role/SP/group/user nodes).
+_BESPOKE_PRIMS = {"CanGrantRole", "CanGrantAppRole", "CanAddSecret", "CanAddOwner",
+                  "CanAddMember", "CanResetPassword"}
+# Tenant-takeover primitives: the SP can directly reach admin-equivalent control (golden SAML,
+# token-signing-key forgery, PIM self-grant, resetting any user's auth methods incl. an admin, or
+# directory-wide write), so they reach the critical Tier-0 roles (or TenantControl if none exist).
+# Deliberately CONSERVATIVE: perms that merely modify user objects (User.ReadWrite.All) or abuse
+# dir-sync are control-weakening, NOT tenant takeover, so no Tier-0 path is fabricated from them.
+_TENANT_TAKEOVER_PRIMS = {"CanFederateTenant", "CanForgeTokens", "CanManageResourcePIM",
+                          "CanManageUserIdentities", "CanManageDirectory"}
+# Control-weakening / directory-manipulation primitives: reach the synthetic SecurityControls node
+# (an objective), but never claim Tier-0.
+_CONTROL_WEAKEN_PRIMS = {"CanWeakenControls", "CanManageAdminUnits", "CanAbuseDirSync",
+                         "CanModifyUsers"}
+# Data-plane primitives: reach a synthetic DataSink node for the data category they expose.
+_DATA_SINK_PRIMS = {
+    "CanExfiltrateMail": "Mail", "CanSendMail": "Mail", "CanManageExchange": "Mail",
+    "CanExfiltrateFiles": "Files", "CanExfiltrateSites": "Sites",
+    "CanExfiltrateContacts": "Contacts", "CanReadTeams": "Teams",
+    "CanAccessEDiscovery": "eDiscovery", "CanManageDevices": "Devices",
+    "CanReadBitLockerKeys": "BitLockerKeys", "CanManageOwnedApps": "Applications",
+}
+# Totality guard: every primitive the catalog can emit must be in exactly one group, so no
+# primitive silently falls through (tests/test_app_role_node.py::test_every_primitive_mapped).
+HANDLED_PRIMITIVES = (_BESPOKE_PRIMS | _TENANT_TAKEOVER_PRIMS | _CONTROL_WEAKEN_PRIMS
+                      | set(_DATA_SINK_PRIMS))
+
+
+def _security_controls_node(g: Graph) -> str:
+    nid = f"SecurityControls:{g.tenant_id or 'unknown'}"
+    if g.node(nid) is None:
+        g.add_node(Node(id=nid, kind=NodeKind.SECURITY_CONTROLS, name="Tenant security controls",
+                        props={"synthetic": True}))
+    return nid
+
+
+def _data_sink_node(g: Graph, category: str) -> str:
+    nid = f"DataSink:{category}"
+    if g.node(nid) is None:
+        g.add_node(Node(id=nid, kind=NodeKind.DATA_SINK, name=f"{category} data",
+                        props={"synthetic": True, "category": category}))
+    return nid
 
 
 def derive(g: Graph, extra_tier0: "set[str] | None" = None) -> None:
     _expand_effective_roles(g)
     _tag_tier0(g, extra_tier0)
+    _add_tenant_control(g)
     _derive_ownership_escalation(g)
     _derive_app_role_escalation(g)
     _derive_rbac_escalation(g)
@@ -29,6 +79,34 @@ def derive(g: Graph, extra_tier0: "set[str] | None" = None) -> None:
 
 
 # --------------------------------------------------------------------------- #
+def tenant_control_id(g: Graph) -> str:
+    """Id of the synthetic TenantControl node for this tenant."""
+    return f"Tenant:{g.tenant_id or 'unknown'}"
+
+
+def _add_tenant_control(g: Graph) -> None:
+    """Make tenant takeover explicit in the graph (PRD v2.1 Workstream B): a synthetic
+    TenantControl node that every CRITICAL Tier-0 role points at via a ControlsTenant edge.
+    Reaching any critical role (Global Administrator, Privileged Role Administrator, ...) then
+    reaches tenant-wide control as a single node, so blast-radius and takeover are visible in
+    the graph and the explorer instead of being an implicit property of a tag."""
+    critical_roles = [r for r in g.nodes_of_kind(NodeKind.ROLE) if "tier0_critical" in r.tags]
+    if not critical_roles:
+        return
+    tc_id = tenant_control_id(g)
+    if g.node(tc_id) is None:
+        # Not tagged tier0_target: takeover is detected by REACHING this node in blast
+        # radius, but it must not become a redundant attack-path target duplicating the
+        # critical role rows (an entry that reaches GA already records (entry, GA)).
+        g.add_node(Node(id=tc_id, kind=NodeKind.TENANT_CONTROL, name="Tenant control",
+                        props={"synthetic": True, "tenant_id": g.tenant_id or ""},
+                        tags={"tier0", "tier0_critical"}))
+    for r in critical_roles:
+        g.add_edge(Edge(src=r.id, dst=tc_id, type=EdgeType.CONTROLS_TENANT, derived=True,
+                        primitive="ControlsTenant",
+                        evidence={"reason": f"{r.name} grants tenant-wide control"}))
+
+
 def _principals(g: Graph):
     return g.nodes_of_kind(NodeKind.USER, NodeKind.GROUP, NodeKind.SERVICE_PRINCIPAL)
 
@@ -98,15 +176,26 @@ def _tag_tier0(g: Graph, extra_tier0: "set[str] | None" = None) -> None:
             n = g.node(nid)
             if n is not None:
                 n.tags.add("tier0")
+                n.tags.add("tier0_target")  # a user-picked crown-jewel OBJECT
                 n.tags.add("user_tier0")   # provenance: distinguishes a manual pick
     # Tag the Tier-0 ROLE nodes themselves, not just their holders. facts.py sorts
     # escalation_edges by whether the destination is tier0-tagged; because role nodes
     # were never tagged, every CanGrantRole edge ("this SP can assign itself Global
     # Administrator", the most severe primitive in the graph) sorted last and was
     # evicted by the 5,000-edge cap before reaching the privilege-escalation specialist.
+    # Tier-0 tag vocabulary (PRD v2.1 Workstream A/B). The legacy "tier0" tag is kept on
+    # BOTH crown-jewel objects and their holders for backward compatibility with the many
+    # consumers that read it; the two new tags discriminate the roles the PRD needs:
+    #   tier0_target        - the node IS a crown-jewel objective (a Tier-0 role / object);
+    #                         the END of an attack path, never an entry point.
+    #   holds_tier0         - a principal that HOLDS a Tier-0 role/scope (a path may still
+    #                         pass through or start at it unless it holds a CRITICAL role).
+    #   holds_critical_tier0 - a principal holding a critical Tier-0 role (Global Admin /
+    #                         Privileged Role Admin): already tenant-level, never an entry.
     for r in g.nodes_of_kind(NodeKind.ROLE):
         if _is_tier0_role(r):
             r.tags.add("tier0")
+            r.tags.add("tier0_target")
             if (r.name or "").lower() in C.CRITICAL_ENTRA_ROLE_NAMES:
                 r.tags.add("tier0_critical")
     for p in _principals(g):
@@ -115,11 +204,14 @@ def _tag_tier0(g: Graph, extra_tier0: "set[str] | None" = None) -> None:
             if role and _is_tier0_role(role):
                 p.tags.add("tier0")
                 p.tags.add("privileged")
+                p.tags.add("holds_tier0")
                 if role.name.lower() in C.CRITICAL_ENTRA_ROLE_NAMES:
                     p.tags.add("tier0_critical")
+                    p.tags.add("holds_critical_tier0")
     # Subscription / MG Owner & UAA holders are also Tier-0 for the resource plane.
     # Use is_at_broad_scope so resource-level (VM, KV, RG) assignments do not
-    # false-positive here, only exact subscription or MG scope is broad enough.
+    # false-positive here, only exact subscription or MG scope is broad enough. These are
+    # NOT critical directory roles, so the holder stays an entry point (PRD A1).
     for p in _principals(g):
         for e in g.out_edges(p.id, EdgeType.HAS_RBAC_ROLE):
             role = (e.evidence.get("role") or "").lower()
@@ -127,6 +219,7 @@ def _tag_tier0(g: Graph, extra_tier0: "set[str] | None" = None) -> None:
             if role in C.RBAC_ESCALATION_ROLES and C.is_at_broad_scope(scope):
                 p.tags.add("tier0")
                 p.tags.add("privileged")
+                p.tags.add("holds_tier0")
     # PIM-eligible (not currently active) Tier-0 roles: a "shadow admin" who can
     # self-activate without ever showing up as an active role holder above.
     for p in _principals(g):
@@ -215,8 +308,44 @@ def _derive_app_role_escalation(g: Graph) -> None:
                 sp.tags.add("can_reach_tier0")
 
             prim = meta["primitive"]
-            if prim == "CanWeakenControls":
+            ev = {"appRole": value, "impact": meta["impact"]}
+
+            # Workstream D: the three semantic classes of Graph permission that previously fell
+            # through a silent CAN_ADD_MEMBER default and only tagged the node. Each now emits a
+            # walkable edge to its objective, so mail exfiltration, token forgery, tenant
+            # federation etc. appear in paths and blast radius.
+            if prim in _TENANT_TAKEOVER_PRIMS:
+                crit = [t for t in tier0_roles if "tier0_critical" in t.tags] or tier0_roles
+                if crit:
+                    for t in crit:
+                        g.add_edge(Edge(src=sp.id, dst=t.id, type=EdgeType.CAN_CONTROL_TENANT,
+                                        derived=True, primitive=prim,
+                                        evidence={**ev, "target_role": t.name,
+                                                  "reason": "can take over the tenant / impersonate this admin role"}))
+                else:
+                    tc = tenant_control_id(g)
+                    if g.node(tc) is None:
+                        g.add_node(Node(id=tc, kind=NodeKind.TENANT_CONTROL, name="Tenant control",
+                                        props={"synthetic": True}, tags={"tier0", "tier0_critical"}))
+                    g.add_edge(Edge(src=sp.id, dst=tc, type=EdgeType.CAN_CONTROL_TENANT,
+                                    derived=True, primitive=prim,
+                                    evidence={**ev, "reason": "can take over the tenant"}))
+                sp.tags.add("can_reach_tier0")
+                continue
+            if prim in _CONTROL_WEAKEN_PRIMS:
                 sp.tags.add("can_weaken_controls")
+                g.add_edge(Edge(src=sp.id, dst=_security_controls_node(g),
+                                type=EdgeType.CAN_WEAKEN_CONTROLS, derived=True, primitive=prim,
+                                evidence={**ev, "reason": "can weaken the tenant's security controls"}))
+                continue
+            if prim in _DATA_SINK_PRIMS:
+                g.add_edge(Edge(src=sp.id, dst=_data_sink_node(g, _DATA_SINK_PRIMS[prim]),
+                                type=EdgeType.CAN_EXFILTRATE_DATA, derived=True, primitive=prim,
+                                evidence={**ev, "reason": f"can access {_DATA_SINK_PRIMS[prim]} data across the tenant"}))
+                continue
+            if prim not in _BESPOKE_PRIMS:
+                # Unmapped primitive: tag only, no fabricated edge. The totality test guards
+                # against this reaching production; never silently route it to CAN_ADD_MEMBER.
                 continue
 
             etype = {
@@ -226,9 +355,7 @@ def _derive_app_role_escalation(g: Graph) -> None:
                 "CanAddOwner": EdgeType.CAN_ADD_OWNER,
                 "CanAddMember": EdgeType.CAN_ADD_MEMBER,
                 "CanResetPassword": EdgeType.CAN_RESET_PASSWORD,
-            }.get(prim, EdgeType.CAN_ADD_MEMBER)
-
-            ev = {"appRole": value, "impact": meta["impact"]}
+            }[prim]
 
             if prim == "CanGrantRole":
                 # Can assign any Entra role to itself or any principal.
@@ -244,11 +371,35 @@ def _derive_app_role_escalation(g: Graph) -> None:
                                     primitive=prim, evidence=ev))
 
             elif prim == "CanGrantAppRole":
-                # Can grant itself RoleManagement.ReadWrite.Directory → two-hop path to GA.
-                # Self-loop is semantically correct here; tag the capability explicitly.
-                g.add_edge(Edge(src=sp.id, dst=sp.id, type=etype, derived=True,
-                                primitive=prim,
-                                evidence={**ev, "reason": "can grant itself RoleManagement.ReadWrite.Directory, then assign Tier-0 roles"}))
+                # AppRoleAssignment.ReadWrite.All: the SP can grant ITSELF any app role,
+                # including RoleManagement.ReadWrite.Directory, which then assigns any Entra
+                # role (Global Administrator) to itself. The old model expressed this as an
+                # SP->SP self-loop, which every traversal skips (e.src != e.dst), so the
+                # escalation existed only as a tag and NO engine could walk it. Model it as a
+                # real two-hop chain through a shared synthetic app-role node:
+                #   SP --CanGrantAppRole--> [RoleManagement.ReadWrite.Directory]
+                #      --CanGrantRole--> each Tier-0 role.
+                if tier0_roles:
+                    if g.node(_GRANTABLE_ROLE_NODE) is None:
+                        g.add_node(Node(id=_GRANTABLE_ROLE_NODE,
+                                        kind=NodeKind.GRANTABLE_APP_ROLE,
+                                        name="RoleManagement.ReadWrite.Directory",
+                                        props={"synthetic": True}))
+                        for t in tier0_roles:
+                            g.add_edge(Edge(src=_GRANTABLE_ROLE_NODE, dst=t.id,
+                                            type=EdgeType.CAN_GRANT_ROLE, derived=True,
+                                            primitive="CanGrantRole",
+                                            evidence={"target_role": t.name,
+                                                      "reason": "RoleManagement.ReadWrite.Directory assigns any Entra role"}))
+                    g.add_edge(Edge(src=sp.id, dst=_GRANTABLE_ROLE_NODE, type=etype,
+                                    derived=True, primitive=prim,
+                                    evidence={**ev, "reason": "can grant itself RoleManagement.ReadWrite.Directory, then assign Tier-0 roles"}))
+                else:
+                    # Empty/degenerate tenant with no Tier-0 role nodes yet: keep the
+                    # capability as a self-loop + tag so nothing downstream regresses.
+                    g.add_edge(Edge(src=sp.id, dst=sp.id, type=etype, derived=True,
+                                    primitive=prim,
+                                    evidence={**ev, "reason": "can grant itself RoleManagement.ReadWrite.Directory, then assign Tier-0 roles"}))
                 sp.tags.add("can_reach_tier0")
 
             elif prim == "CanAddSecret":
@@ -577,7 +728,8 @@ def _derive_storage_key_access(g: Graph) -> None:
                 if _scope_covers(scope, acct, g) and not _denied(g, p.id, scope):
                     g.add_edge(Edge(src=p.id, dst=acct.id, type=EdgeType.CAN_GET_STORAGE_KEY,
                                     derived=True, primitive="CanGetStorageKey",
-                                    evidence={"role": role, "reason": "can listKeys for the storage account"}))
+                                    evidence={"role": role, "scope": scope,
+                                              "reason": "can listKeys for the storage account"}))
 
 
 def _derive_storage_blob_access(g: Graph) -> None:

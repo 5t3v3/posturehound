@@ -92,6 +92,7 @@ class GraphEdge:
     derived: bool = False           # True for escalation/abuse edges (attack-relevant)
     count: int = 1                  # how many raw assignments collapsed into this edge
     weight: float = 1.0             # traversal difficulty (lower = easier); for cost-aware paths
+    weight_reason: str = ""         # why the weight was adjusted from its base (context-aware, E3)
     why: str = ""                   # plain explanation of the abuse (provenance panel)
     conditions: list[str] = field(default_factory=list)   # extra prerequisites
     evidence: dict[str, Any] = field(default_factory=dict)  # concrete scope/role/reason

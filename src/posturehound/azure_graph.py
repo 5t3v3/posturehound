@@ -40,6 +40,38 @@ class GraphResult:
         return any(self.collected.values())
 
 
+# Collection record kinds that carry identity-plane config, so an uploaded (or demo)
+# collection can drive the identity-config rules deterministically, exactly as a live Graph
+# collection does. A live AzureHound dump never contains these, so adding them is additive.
+CA_POLICY_KIND = "AZConditionalAccessPolicy"
+SECURITY_DEFAULTS_KIND = "AZSecurityDefaults"
+AUTHORIZATION_POLICY_KIND = "AZAuthorizationPolicy"
+
+
+def graph_result_from_records(records: "list[dict]") -> "GraphResult | None":
+    """Build a GraphResult from ingested identity-config records, so `run_graph_rules` can
+    assess a FILE collection (and the bundled demo), not only a live Microsoft Graph pull.
+    Returns None when the collection carries no identity-config records at all (so a plain
+    AzureHound dump is unaffected and the live path is unchanged)."""
+    ca = [r.get("data") for r in records if r.get("kind") == CA_POLICY_KIND]
+    sd = [r.get("data") for r in records if r.get("kind") == SECURITY_DEFAULTS_KIND]
+    ap = [r.get("data") for r in records if r.get("kind") == AUTHORIZATION_POLICY_KIND]
+    if not (ca or sd or ap):
+        return None
+    gr = GraphResult()
+    if ca:
+        gr.ca_policies = [c for c in ca if isinstance(c, dict)]
+        gr.collected["conditionalAccess"] = True
+    if sd:
+        d0 = next((d for d in sd if isinstance(d, dict)), {})
+        gr.security_defaults_enabled = bool(d0.get("isEnabled"))
+        gr.collected["securityDefaults"] = True
+    if ap:
+        gr.authorization_policy = next((d for d in ap if isinstance(d, dict)), None)
+        gr.collected["authorizationPolicy"] = True
+    return gr
+
+
 def _default_client():
     import httpx
     cert = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")

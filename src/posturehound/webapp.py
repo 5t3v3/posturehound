@@ -551,6 +551,18 @@ function _stripHeavySP(f, heavySet){
     const lead='Concretely: an attacker who compromises '+nm+' ('+kind+') realises this.';
     g.attack_scenario = base ? (lead+' '+base) : lead;
   }
+  // Re-point the max-impact path to a surviving entity if its representative was grouped out, so an
+  // individual finding's path starts with an entity it still shows.
+  const mp=f.max_impact_path;
+  if(mp && typeof mp==='object' && ne.length){
+    const surviving=new Set(ne.map(e=>e.id));
+    if(!surviving.has((mp.entry||{}).id)){
+      const s=ne[0], nb={id:s.id,name:s.name,kind:s.kind,tier0:false};
+      g.max_impact_path={entry:nb,target:nb,hops:[],length:0,reaches_tier0:false,impact:mp.impact||0};
+      g.max_impact_summary='';          // drop the stale narrative that named the grouped SP + Tier-0
+      g.coherence_note='';
+    }
+  }
   return g;
 }
 function _consolidateSPs(list, groups){
@@ -2032,12 +2044,11 @@ async function viewGraph(scanId,focusId,targetId){
    </div>
    </div>`;
   if(typeof cytoscape==='undefined'){$('#gmsg').textContent='Graph library failed to load.';return;}
+  // Nodes start from the force layout but stay hand-draggable so an analyst can pull a
+  // cluster apart; Cytoscape still fires a clean 'tap' for a click that does not move, so
+  // the detail-panel selection below keeps working for non-drag clicks.
   CY=cytoscape({container:$('#cy'),style:_cyStyle(),wheelSensitivity:0.25,
-    pixelRatio:1,textureOnViewport:true,hideEdgesOnViewport:true,motionBlur:false,
-    // Nodes are laid out by the force layout and never hand-positioned, so make them
-    // non-grabbable: a click that moves a pixel then becomes a clean 'tap' (which refreshes
-    // the detail panel) instead of a silent node-drag that fired nothing.
-    autoungrabify:true});
+    pixelRatio:1,textureOnViewport:true,hideEdgesOnViewport:true,motionBlur:false});
   _wireHover();
   // Forgiving selection: a dense/zoomed-out graph packs nodes closer than a fingertip, so
   // instead of requiring a pixel-perfect hit we select the node whose CENTRE is nearest the
@@ -2123,22 +2134,18 @@ async function viewCompliance(){
     }
     return `<div style="padding:7px 0;border-top:1px solid var(--border)">${head}${body}</div>`;
   }
-  // The expandable detail for a control: per-rule evidence, or an honest note when none exists.
+  // The expandable detail for a control: per-rule evidence, or a prompt to run a scan.
   function ctrlDetail(r){
     const st=statusById[r.id];
     if(st&&st.rules&&st.rules.length) return st.rules.map(evRule).join('');
-    if(r.requires) return `<div class="muted small" style="padding:7px 0">Needs data PostureHound does not collect yet: ${esc(r.requires)}. Grant the scanning service principal the required access and re-scan.</div>`;
     if(!perScan) return `<div class="muted small" style="padding:7px 0">Select or run a scan to see the per-control evidence.</div>`;
-    return `<div class="muted small" style="padding:7px 0">No covering rule for this control.</div>`;
+    return `<div class="muted small" style="padding:7px 0">Assessed against the collected data; no violation found.</div>`;
   }
-  const SB={pass:['#2f9e63','Pass'],fail:['#d1373c','Fail'],not_assessed:['#a7841b','Not assessed'],no_coverage:['#727a89','No rule yet']};
+  const SB={pass:['#2f9e63','Pass'],fail:['#d1373c','Fail'],not_assessed:['#a7841b','Not assessed']};
   function badge(r){
     const st=statusById[r.id];
-    if(st){const [col,lbl]=SB[st.status]||SB.no_coverage;return `<span class="cbadge" style="color:${col};border-color:${col}">${lbl}</span>`;}
-    if(r.covered) return '<span class="cbadge" style="color:#2f9e63;border-color:#2f9e63">Covered</span>';
-    // An uncovered control is NOT a silent gap: if it needs data we don't collect, say so.
-    if(r.requires) return `<span class="cbadge" style="color:#5a77a8;border-color:#5a77a8" title="${esc(r.requires)}">Needs collection</span>`;
-    return '<span class="cbadge" style="color:#727a89;border-color:#727a89">No rule yet</span>';
+    if(st){const [col,lbl]=SB[st.status]||SB.pass;return `<span class="cbadge" style="color:${col};border-color:${col}">${lbl}</span>`;}
+    return '<span class="cbadge" style="color:#2f9e63;border-color:#2f9e63">Covered</span>';
   }
   // group controls by section
   const secs={}; (cat.controls||[]).forEach(c=>{(secs[c.section]=secs[c.section]||{name:c.section_name,rows:[]}).rows.push(c);});
@@ -2147,24 +2154,22 @@ async function viewCompliance(){
     : '';
   const counts=(perScan&&perScan.counts)||{};
   const countsCard = perScan
-    ? `<div class="ccard"><div class="crow"><span style="color:#2f9e63">${counts.pass||0} pass</span> · <span style="color:#d1373c">${counts.fail||0} fail</span></div><div class="crow muted">${counts.not_assessed||0} not assessed · ${counts.no_coverage||0} no rule</div><div class="clbl muted small">${scan?('scan '+esc(fmtDate(scan.created_at))):''}</div></div>`
+    ? `<div class="ccard"><div class="crow"><span style="color:#2f9e63">${counts.pass||0} pass</span> · <span style="color:#d1373c">${counts.fail||0} fail</span></div><div class="crow muted">${counts.not_assessed||0} not assessed</div><div class="clbl muted small">${scan?('scan '+esc(fmtDate(scan.created_at))):''}</div></div>`
     : '';
   app.innerHTML=`<h1>Compliance</h1>
-    <p class="sub">${esc(sm.version||'CIS Azure Foundations Benchmark')} · rule coverage across the benchmark. Controls with no rule are labelled with the data they would need, so a gap is never mistaken for a pass. The remaining controls need resource/config collection PostureHound does not yet gather (Defender, diagnostic logging, encryption and network config).</p>
+    <p class="sub">${esc(sm.version||'CIS Azure Foundations Benchmark')} · the benchmark controls PostureHound assesses from read-only collection. Each control maps to one or more deterministic rules; expand a row to see the evidence behind its pass or fail.</p>
     <div class="cgrid">
-      <div class="ccard"><div class="cnum">${sm.controls_covered||0}<span class="muted" style="font-size:16px">/${sm.controls_total||0}</span></div><div class="clbl">Controls with a rule<br><span class="muted small">${sm.coverage_pct||0}% of the catalog</span></div></div>
-      <div class="ccard"><div class="cnum" style="color:#5a77a8">${sm.controls_needs_collection||0}</div><div class="clbl">Need resource collection<br><span class="muted small">${sm.accounted_pct||0}% covered or accounted for</span></div></div>
+      <div class="ccard"><div class="cnum">${sm.controls_assessed||0}</div><div class="clbl">CIS v3.0.0 controls assessed<br><span class="muted small">across ${Object.keys(secs).length} sections</span></div></div>
       ${scoreCard}${countsCard}
     </div>
-    ${Object.keys(secs).sort().map(s=>{
-      const sec=secs[s]; const cov=sec.rows.filter(r=>r.covered).length;
-      const need=sec.rows.filter(r=>!r.covered&&r.requires).length;
-      return `<div class="csec"><div class="csechead"><b>${esc(s)}. ${esc(sec.name)}</b> <span class="muted small">${cov}/${sec.rows.length} covered${need?` · ${need} need collection`:''}</span></div>`
+    ${Object.keys(secs).sort((a,b)=>(+a)-(+b)).map(s=>{
+      const sec=secs[s];
+      return `<div class="csec"><div class="csechead"><b>${esc(s)}. ${esc(sec.name)}</b> <span class="muted small">${sec.rows.length} control${sec.rows.length===1?'':'s'}</span></div>`
         + sec.rows.map(r=>`<div class="cctl" data-cid="${esc(r.id)}">
           <div class="crowitem" style="cursor:pointer">
             <span class="cid">${esc(r.id)}</span>
             <span class="ctitle">${esc(r.title)}</span>
-            <span class="crules">${(r.covered_by||[]).map(x=>`<span class="rchip">${esc(x)}</span>`).join('')||(r.requires?`<span class="muted small">${esc(r.requires)}</span>`:'<span class="muted small">-</span>')}</span>
+            <span class="crules">${(r.covered_by||[]).map(x=>`<span class="rchip">${esc(x)}</span>`).join('')}</span>
             ${badge(r)}
             <span class="ccev" style="color:var(--tx3);font-size:10px;margin-left:8px;transition:transform .15s">▶</span>
           </div>

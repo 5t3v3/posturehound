@@ -297,6 +297,18 @@ KB: dict[str, dict] = {
         ],
         "detection": "Monitor Key Vault data-plane access (SecretGet/List) and alert on broad or anomalous access.",
     },
+    "AZ-KV-013": {
+        "summary": "One principal can read secrets from Key Vaults in two or more subscriptions.",
+        "why": "Cross-subscription secret-read access crosses a security boundary: a single identity compromise reaches credentials in multiple subscriptions at once, so the blast radius spans environments that should be isolated (e.g. production and non-production).",
+        "scenario": "The attacker compromises the principal and dumps secrets from every vault it can read across all the subscriptions it spans, then reuses those credentials to pivot between otherwise-separated environments.",
+        "impact": "Credential compromise and lateral movement across subscription (environment) boundaries.",
+        "steps": [
+            "Split the access per subscription/workload rather than one principal spanning subscriptions.",
+            "Use Azure RBAC data-plane roles (Key Vault Secrets User) scoped to the specific vaults each workload needs.",
+            "Use separate identities per environment so no single principal reaches production and non-production secrets.",
+        ],
+        "detection": "Microsoft Graph / Azure: a principal with CAN_REACH_KV_SECRET edges to vaults in more than one subscription; monitor Key Vault data-plane access and alert on cross-subscription patterns.",
+    },
     "AZ-KV-002": {
         "summary": "A Key Vault uses the legacy access-policy model instead of Azure RBAC.",
         "why": "Access policies are coarse, hard to audit centrally, and not integrated with PIM. RBAC offers finer granularity, central management and just-in-time access.",
@@ -455,6 +467,18 @@ KB: dict[str, dict] = {
         ],
         "detection": "Alert on Key Vault access-policy / role-assignment changes followed by secret reads.",
     },
+    "AZ-STOR-011": {
+        "summary": "A storage account is reachable over the public internet (public network access enabled).",
+        "why": "Public network access places the account's data-plane endpoints on the internet. Any leaked SAS token, shared key or over-broad data role then becomes remotely usable; disabling public access and using a private endpoint removes that remote reach entirely.",
+        "scenario": "A SAS token or account key leaks in source control or a captured request; because public network access is enabled, the attacker uses it against the public endpoint from anywhere.",
+        "impact": "The storage data plane is reachable from the internet, widening the blast radius of any credential leak.",
+        "steps": [
+            "Set publicNetworkAccess=Disabled on the storage account.",
+            "Reach the account over a Private Endpoint from the VNet.",
+            "Where public access is unavoidable, set the firewall default action to Deny and allow only specific networks.",
+        ],
+        "detection": "Inventory storage accounts with properties.publicNetworkAccess == 'Enabled'.",
+    },
     "AZ-STOR-001": {
         "summary": "A storage account allows anonymous public access to blob data.",
         "why": "When anonymous public access is enabled at the account, individual containers can be exposed to the internet without authentication, leaking whatever data they hold.",
@@ -515,6 +539,18 @@ KB: dict[str, dict] = {
         ],
         "detection": "Alert on listKeys operations and on shared-key data-plane access.",
     },
+    "AZ-STOR-010": {
+        "summary": "A principal can retrieve a storage account's keys via a resource-scoped role.",
+        "why": "A listKeys-capable role (Storage Account Contributor / Key Operator / Contributor / Owner) scoped to a single account or its resource group still yields the account's shared keys, which grant full, weakly-audited data access that bypasses per-identity RBAC. The reach is limited to the account(s) in scope rather than every account in the subscription (AZ-STOR-002), so it is a least-privilege review item rather than a subscription-wide exposure.",
+        "scenario": "The attacker who compromises the principal calls listKeys on the in-scope account and reads or tampers with its data using the shared key, with little attribution.",
+        "impact": "Shared-key data compromise of the specific storage account(s) in scope.",
+        "steps": [
+            "Prefer Entra (RBAC) data-plane roles scoped to containers over listKeys-capable roles.",
+            "Disable shared-key authorization where possible (allowSharedKeyAccess=false).",
+            "Confirm the workload genuinely needs key access to this account.",
+        ],
+        "detection": "Alert on listKeys operations and on shared-key data-plane access to the account.",
+    },
     "AZ-KV-004": {
         "summary": "A principal can perform cryptographic operations with Key Vault keys.",
         "why": "Key permissions such as sign, decrypt, wrapKey and unwrapKey let the holder use a key without exporting it, forging signatures or decrypting protected data, which is easy to overlook because the key never leaves the vault.",
@@ -526,6 +562,18 @@ KB: dict[str, dict] = {
             "Monitor key operation usage.",
         ],
         "detection": "Audit Key Vault key operations (Sign/Decrypt/WrapKey) for unexpected callers.",
+    },
+    "AZ-KV-014": {
+        "summary": "A principal holds Key Vault management-plane access over a specific vault.",
+        "why": "Key Vault Contributor / Administrator over a vault (or its resource group) lets the holder change the vault's access policies or RBAC to grant itself data-plane access and read its secrets. Scoped to the vault(s) in scope rather than the whole subscription (AZ-KV-003), so it is a least-privilege review item rather than a subscription-wide secret exposure.",
+        "scenario": "The attacker who controls the principal grants itself a data-plane role on the in-scope vault, then reads its secrets, keys, and certificates.",
+        "impact": "Self-granted secret access to the specific Key Vault(s) in scope.",
+        "steps": [
+            "Separate management-plane and data-plane roles on the vault.",
+            "Avoid Key Vault Contributor for principals that should not read secrets.",
+            "Enable purge protection and RBAC on the vault.",
+        ],
+        "detection": "Audit access-policy and role-assignment changes on the vault.",
     },
     "AZ-KV-005": {
         "summary": "A Key Vault has purge protection or soft delete disabled.",
@@ -673,7 +721,7 @@ KB: dict[str, dict] = {
     },
     "AZ-APP-016": {
         "summary": "A privileged enterprise application can be accessed by every user in the tenant.",
-        "why": "When `appRoleAssignmentRequired` is false, any authenticated tenant member can obtain a token for the application, assignment is not enforced. If that application also holds sensitive Graph permissions or stored credentials, the set of people who can reach its capability is the entire directory, including guests, dormant accounts, and ex-employees whose accounts have not yet been disabled.",
+        "why": "When `appRoleAssignmentRequired` is false, any authenticated tenant member can sign in to the application and have it act on their behalf under its tenant-wide (admin-consented) DELEGATED Graph permissions, assignment is not enforced. The set of people who can drive those permissions is then the entire directory, including guests, dormant accounts, and ex-employees whose accounts have not yet been disabled. The setting gates only interactive sign-in: it does not affect the app's APPLICATION (app-only) permissions or its own credentials, so those are assessed by the Graph-permission and credential rules, not here.",
         "scenario": "The attacker compromises any low-privilege account, a guest, a service account, a stale user. They authenticate to the application, which does not check role assignment, and exercise whatever the app is authorised to do on their behalf. A low-value foothold becomes access to the app's privileges.",
         "impact": "Any tenant account, however low-privilege, becomes a path to this application's capabilities.",
         "steps": [
@@ -1040,6 +1088,19 @@ KB: dict[str, dict] = {
             "Review managed-identity role assignments and attachment counts on a schedule.",
         ],
         "detection": "Correlate managed-identity attachments (HasManagedIdentity) with the identity's RBAC assignments; alert when one identity is attached to many resources and holds a privileged role. Monitor IMDS token requests from unexpected resources.",
+    },
+    "AZ-MI-003": {
+        "summary": "An Azure platform-managed identity holds a broad role that Azure assigns by design.",
+        "why": "Enabling an Azure service, Defender for Cloud, Azure Policy guest configuration, AKS, Backup, Network Watcher, creates a managed identity and assigns it a broad or data-exposing role (subscription Contributor, listKeys-capable, Key Vault management, or AKS cluster-admin). These assignments are expected and are made by the platform, not by a misconfiguration, so they are surfaced here as a verification item rather than counted as over-grants in the Owner/Contributor, storage-key, Key Vault, and AKS rules, which would otherwise rate every such identity High and bury the real findings. The identity is recognised from the ARM resource id of the identity or the resource it is attached to, not its display name.",
+        "scenario": "There is no direct attack here; the risk is review fatigue. If every platform identity is rated High, a genuinely unexpected broad-role identity, an attacker's managed identity, or a service enabled at the wrong scope, hides in the noise. Confirming the known platform identities is what makes an unknown one stand out.",
+        "impact": "Low on its own; the value is removing expected platform assignments from the High findings so a genuine over-grant is visible.",
+        "steps": [
+            "Confirm each listed identity belongs to the named Azure service and that the service is intended to be enabled at this scope.",
+            "Do not remove the role assignment while the service is in use; if the service is not needed, disable it so Azure removes the identity.",
+            "Record the accepted platform identities so a future unexpected one is easy to spot.",
+            "Treat a broad role on a managed identity you cannot map to a platform service as a real finding.",
+        ],
+        "detection": "Reconcile broad-role managed identities against the set of enabled Azure services; alert on a managed identity holding a broad or data-exposing role that does not map to a known platform service.",
     },
     "AZ-IDENT-013": {
         "summary": "A disabled account still holds PIM eligibility to activate a Tier-0 role.",

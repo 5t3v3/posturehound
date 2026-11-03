@@ -102,14 +102,16 @@ ARG_QUERIES: dict[str, str] = {
     "sql_auditing": (
         "Resources | where type =~ 'microsoft.sql/servers/auditingsettings' "
         "| project id, name, subscriptionId, resourceGroup, "
-        "state = properties.state"
+        "state = properties.state, "
+        "retentionDays = properties.retentionDays"
     ),
     "cosmos_accounts": (
         "Resources | where type =~ 'microsoft.documentdb/databaseaccounts' "
         "| project id, name, subscriptionId, resourceGroup, "
         "publicNetworkAccess = properties.publicNetworkAccess, "
         "disableLocalAuth = properties.disableLocalAuth, "
-        "ipRules = properties.ipRules"
+        "ipRules = properties.ipRules, "
+        "privateEndpointConnections = properties.privateEndpointConnections"
     ),
     "postgres_flexible": (
         "Resources | where type =~ 'microsoft.dbforpostgresql/flexibleservers' "
@@ -121,11 +123,72 @@ ARG_QUERIES: dict[str, str] = {
         "| project id, name, subscriptionId, resourceGroup, "
         "publicNetworkAccess = properties.network.publicNetworkAccess"
     ),
+    # SQL transparent data encryption, per database (state Enabled/Disabled). The system 'master'
+    # database is excluded by the rule, not the query.
+    "sql_tde_databases": (
+        "Resources | where type =~ 'microsoft.sql/servers/databases/transparentdataencryption' "
+        "| project id, name, subscriptionId, resourceGroup, state = properties.state"
+    ),
+    # SQL TDE protector key type (ServiceManaged vs AzureKeyVault/customer-managed).
+    "sql_tde_protector": (
+        "Resources | where type =~ 'microsoft.sql/servers/encryptionprotector' "
+        "| project id, name, subscriptionId, resourceGroup, serverKeyType = properties.serverKeyType"
+    ),
+    # SQL servers that have NO Microsoft Entra administrator configured (absence resolved in KQL via
+    # a left-join against the servers/administrators child resource, so every returned row is a
+    # server with no Entra admin and a wrong path can never flag every server).
+    "sql_entra_admin_missing": (
+        "Resources | where type =~ 'microsoft.sql/servers' "
+        "| project serverId = id, name, subscriptionId, resourceGroup "
+        "| join kind=leftouter (Resources "
+        "  | where type =~ 'microsoft.sql/servers/administrators' "
+        "  | extend serverId = tostring(split(id, '/administrators')[0]) "
+        "  | summarize admins = count() by serverId) on serverId "
+        "| extend admins = coalesce(admins, 0) | where admins == 0 "
+        "| project id = serverId, name, subscriptionId, resourceGroup"
+    ),
+    # PostgreSQL / MySQL flexible-server parameters (one row per {server, parameter}); the rules
+    # check a specific parameter's value. serverId is the parent flexible-server resource id.
+    "postgres_flex_configs": (
+        "Resources | where type =~ 'microsoft.dbforpostgresql/flexibleservers/configurations' "
+        "| project id, name, subscriptionId, resourceGroup, "
+        "serverId = tostring(split(id, '/configurations/')[0]), "
+        "value = tostring(properties.value)"
+    ),
+    "mysql_flex_configs": (
+        "Resources | where type =~ 'microsoft.dbformysql/flexibleservers/configurations' "
+        "| project id, name, subscriptionId, resourceGroup, "
+        "serverId = tostring(split(id, '/configurations/')[0]), "
+        "value = tostring(properties.value)"
+    ),
+    # Storage-account encryption / key / SAS policy (CIS 4.2 / 4.3 / 4.5 / 4.11). keySource is
+    # always present (defaults to Microsoft.Storage); keyPolicy / sasPolicy are optional.
+    "storage_config": (
+        "Resources | where type =~ 'microsoft.storage/storageaccounts' "
+        "| project id, name, subscriptionId, resourceGroup, "
+        "keySource = tostring(properties.encryption.keySource), "
+        "requireInfraEnc = properties.encryption.requireInfrastructureEncryption, "
+        "keyExpirationDays = properties.keyPolicy.keyExpirationPeriodInDays, "
+        "sasExpiration = tostring(properties.sasPolicy.sasExpirationPeriod)"
+    ),
+    # Storage blob-service soft delete (CIS 4.10). The blobServices/default child always carries
+    # the retention policy, so a missing/false enabled flag is a definite finding.
+    "storage_blob_soft_delete": (
+        "Resources | where type =~ 'microsoft.storage/storageaccounts/blobservices' "
+        "| extend accId = tostring(split(id, '/blobServices/')[0]) "
+        "| extend seg = split(accId, '/') "
+        "| project id = accId, name = tostring(seg[array_length(seg) - 1]), "
+        "subscriptionId, resourceGroup, "
+        "deleteEnabled = properties.deleteRetentionPolicy.enabled, "
+        "containerDeleteEnabled = properties.containerDeleteRetentionPolicy.enabled"
+    ),
     # Threat protection -----------------------------------------------------
     "defender_pricings": (
         "securityresources | where type =~ 'microsoft.security/pricings' "
         "| project id, name, subscriptionId, "
-        "pricingTier = properties.pricingTier"
+        "pricingTier = properties.pricingTier, "
+        # Per-plan sub-components (each {name, isEnabled}); drives the Defender component rules.
+        "extensions = properties.extensions"
     ),
     "defender_autoprovisioning": (
         "securityresources | where type =~ 'microsoft.security/autoprovisioningsettings' "
@@ -153,8 +216,31 @@ ARG_QUERIES: dict[str, str] = {
         "minTlsVersion = properties.siteConfig.minTlsVersion, "
         "ftpsState = properties.siteConfig.ftpsState, "
         "remoteDebugging = properties.siteConfig.remoteDebuggingEnabled, "
+        "http20Enabled = properties.siteConfig.http20Enabled, "
+        "httpLoggingEnabled = properties.siteConfig.httpLoggingEnabled, "
         "identityType = identity.type, "
         "publicNetworkAccess = properties.publicNetworkAccess"
+    ),
+    # App Services with NO enabled authentication (EasyAuth). Absence resolved by a left-join
+    # against the authsettingsV2 config child, so every returned row is a site with auth off.
+    "appservice_auth_missing": (
+        "Resources | where type =~ 'microsoft.web/sites' "
+        "| project siteId = id, name, subscriptionId, resourceGroup "
+        "| join kind=leftouter (Resources "
+        "  | where type =~ 'microsoft.web/sites/config' and name endswith 'authsettingsV2' "
+        "  | extend siteId = tostring(split(id, '/config/')[0]), "
+        "    enabled = tobool(properties.platform.enabled) "
+        "  | where enabled == true | summarize authOn = count() by siteId) on siteId "
+        "| extend authOn = coalesce(authOn, 0) | where authOn == 0 "
+        "| project id = siteId, name, subscriptionId, resourceGroup"
+    ),
+    # App Services where basic (publishing) authentication is still ALLOWED on ftp or scm. Each
+    # returned row is a site+policy with basic auth enabled.
+    "appservice_basic_auth": (
+        "Resources | where type =~ 'microsoft.web/sites/basicpublishingcredentialspolicies' "
+        "| where properties.allow == true "
+        "| project id = tostring(split(id, '/basicPublishingCredentialsPolicies/')[0]), "
+        "name, subscriptionId, resourceGroup, policy = name"
     ),
     # Containers ------------------------------------------------------------
     "aks_clusters": (
@@ -183,7 +269,33 @@ ARG_QUERIES: dict[str, str] = {
         "| project id, name, subscriptionId, resourceGroup, "
         "networkAccessPolicy = properties.networkAccessPolicy, "
         "publicNetworkAccess = properties.publicNetworkAccess, "
-        "encryptionType = tostring(properties.encryption.type)"
+        "encryptionType = tostring(properties.encryption.type), "
+        "dataAccessAuthMode = tostring(properties.dataAccessAuthMode)"
+    ),
+    # VMs whose OS disk is UNMANAGED (an explicit vhd blob rather than a managed disk). Managed
+    # disks give platform encryption, RBAC and snapshot management that classic VHDs lack.
+    "vm_unmanaged_disk": (
+        "Resources | where type =~ 'microsoft.compute/virtualmachines' "
+        "| where isnotnull(properties.storageProfile.osDisk.vhd) "
+        "| project id, name, subscriptionId, resourceGroup"
+    ),
+    # NSG flow logs that ARE enabled but retain for a finite period of 90 days or less (0 = retain
+    # forever, which is compliant and excluded here).
+    "nsg_flowlog_short_retention": (
+        "resources | where type =~ 'microsoft.network/networkwatchers/flowlogs' "
+        "| where properties.enabled == true "
+        "| extend days = toint(properties.retentionPolicy.days) "
+        "| where days > 0 and days <= 90 "
+        "| project id, name, subscriptionId, resourceGroup, days"
+    ),
+    # Subscriptions with NO Network Watcher at all (absence resolved in KQL).
+    "network_watcher_missing": (
+        "resourcecontainers | where type =~ 'microsoft.resources/subscriptions' "
+        "| project subscriptionId, subName = name "
+        "| join kind=leftouter (resources | where type =~ 'microsoft.network/networkwatchers' "
+        "  | summarize nw = count() by subscriptionId) on subscriptionId "
+        "| extend nw = coalesce(nw, 0) | where nw == 0 "
+        "| project id = strcat('/subscriptions/', subscriptionId), name = subName, subscriptionId"
     ),
     # Caches, messaging, gateways, AI ---------------------------------------
     "redis_caches": (
@@ -218,7 +330,109 @@ ARG_QUERIES: dict[str, str] = {
         "publicNetworkAccess = properties.publicNetworkAccess, "
         "disableLocalAuth = properties.disableLocalAuth"
     ),
+    # Logging / monitoring SETTINGS (whether audit logging is ENABLED). These read only the
+    # presence of a diagnostic/flow-log setting, never any log contents or tenant data. Each
+    # resolves ABSENCE in KQL via a left-join against microsoft.insights/diagnosticSettings
+    # (the same technique as defender_security_contacts_missing), so a schema change to the
+    # setting's own fields can never produce a false finding.
+    "keyvault_diagnostics_missing": (
+        "resources | where type =~ 'microsoft.keyvault/vaults' "
+        "| extend pid = tolower(id) "
+        "| join kind=leftouter (resources "
+        "  | where type =~ 'microsoft.insights/diagnosticsettings' "
+        "  | extend pid = tolower(substring(id, 0, indexof(id, '/providers/microsoft.insights/diagnosticsettings'))) "
+        "  | summarize diag = count() by pid) on pid "
+        "| extend diag = coalesce(diag, 0) | where diag == 0 "
+        "| project id, name, subscriptionId, resourceGroup"
+    ),
+    "storage_diagnostics_missing": (
+        "resources | where type =~ 'microsoft.storage/storageaccounts' "
+        "| extend pid = tolower(id) "
+        "| join kind=leftouter (resources "
+        "  | where type =~ 'microsoft.insights/diagnosticsettings' "
+        "  | extend pid = tolower(substring(id, 0, indexof(id, '/providers/microsoft.insights/diagnosticsettings'))) "
+        "  | summarize diag = count() by pid) on pid "
+        "| extend diag = coalesce(diag, 0) | where diag == 0 "
+        "| project id, name, subscriptionId, resourceGroup"
+    ),
+    # Subscriptions with NO activity-log export (no subscription-scoped diagnostic setting), so
+    # the control-plane audit trail is not retained anywhere.
+    "subscription_activitylog_missing": (
+        "resourcecontainers | where type =~ 'microsoft.resources/subscriptions' "
+        "| project subscriptionId, subName = name "
+        "| join kind=leftouter (resources "
+        "  | where type =~ 'microsoft.insights/diagnosticsettings' "
+        "  | where id startswith '/subscriptions/' and id !has '/resourcegroups/' "
+        "  | summarize diag = count() by subscriptionId) on subscriptionId "
+        "| extend diag = coalesce(diag, 0) | where diag == 0 "
+        "| project id = strcat('/subscriptions/', subscriptionId), name = subName, subscriptionId"
+    ),
+    # Network Security Groups with NO flow log configured (no network-flow visibility).
+    "nsg_flowlogs_missing": (
+        "resources | where type =~ 'microsoft.network/networksecuritygroups' "
+        "| extend pid = tolower(id) "
+        "| join kind=leftouter (resources "
+        "  | where type =~ 'microsoft.network/networkwatchers/flowlogs' "
+        "  | extend pid = tolower(tostring(properties.targetResourceId)) "
+        "  | summarize flows = count() by pid) on pid "
+        "| extend flows = coalesce(flows, 0) | where flows == 0 "
+        "| project id, name, subscriptionId, resourceGroup"
+    ),
+    # Per subscription, the set of operationNames that have an ENABLED activity-log alert. Every
+    # subscription appears (left-join), with an empty set when it has no alerts, so a rule can flag
+    # a subscription that is missing the alert for a specific operation without false positives.
+    "activity_log_alerts": (
+        "resourcecontainers | where type =~ 'microsoft.resources/subscriptions' "
+        "| project subscriptionId, subName = name "
+        "| join kind=leftouter (resources "
+        "  | where type =~ 'microsoft.insights/activitylogalerts' "
+        "  | where properties.enabled == true "
+        "  | mv-expand cond = properties.condition.allOf "
+        "  | where tostring(cond.field) =~ 'operationName' "
+        "  | extend op = tolower(tostring(cond.equals)) "
+        "  | summarize alertedOps = make_set(op) by subscriptionId) on subscriptionId "
+        "| extend alertedOps = coalesce(alertedOps, dynamic([])) "
+        "| project id = strcat('/subscriptions/', subscriptionId), name = subName, "
+        "subscriptionId, alertedOps"
+    ),
+    # Subscriptions with NO Azure Bastion host, so administrative RDP/SSH has no managed
+    # broker and tends to be reached over direct public exposure instead.
+    "bastion_hosts_missing": (
+        "resourcecontainers | where type =~ 'microsoft.resources/subscriptions' "
+        "| project subscriptionId, subName = name "
+        "| join kind=leftouter (resources "
+        "  | where type =~ 'microsoft.network/bastionhosts' "
+        "  | summarize bastions = count() by subscriptionId) on subscriptionId "
+        "| extend bastions = coalesce(bastions, 0) | where bastions == 0 "
+        "| project id = strcat('/subscriptions/', subscriptionId), name = subName, subscriptionId"
+    ),
 }
+
+
+# Collection record kind carrying Azure Resource Graph rows, so an uploaded (or demo)
+# collection can drive the resource-config rules deterministically, exactly as a live ARG
+# collection does. Each record is {"query": "<ARG_QUERIES key>", "rows": [ {row}, ... ]}.
+RESOURCE_GRAPH_KIND = "AZResourceGraphResult"
+
+
+def arg_result_from_records(records: "list[dict]") -> "ArgResult | None":
+    """Build an ArgResult from ingested AZResourceGraphResult records, so `run_arg_rules`
+    can assess a FILE collection (and the bundled demo), not only a live ARG pull. Returns
+    None when the collection carries no resource-graph records (plain AzureHound dump)."""
+    rows: dict[str, list[dict]] = {}
+    seen = False
+    for r in records:
+        if r.get("kind") != RESOURCE_GRAPH_KIND:
+            continue
+        d = r.get("data") or {}
+        key = d.get("query")
+        if not key:
+            continue
+        seen = True
+        rows.setdefault(key, []).extend(d.get("rows") or [])
+    if not seen:
+        return None
+    return ArgResult(rows=rows)
 
 
 def _read_dotenv() -> dict:
@@ -536,6 +750,7 @@ _RESOURCE_PROP_FIELDS: tuple[tuple[str, str], ...] = (
     ("p_minimumTlsVersion", "minimumTlsVersion"),
     ("p_supportsHttpsTrafficOnly", "supportsHttpsTrafficOnly"),
     ("p_allowCrossTenantReplication", "allowCrossTenantReplication"),
+    ("p_publicNetworkAccess", "publicNetworkAccess"),
     # Firewall + private endpoints (both Key Vault and Storage)
     ("p_networkAcls", "networkAcls"),
     ("p_privateEndpointConnections", "privateEndpointConnections"),

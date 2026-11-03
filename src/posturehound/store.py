@@ -680,6 +680,8 @@ def _summary(result: dict, scan_id: str, files: list[str]) -> dict:
         "complete": result.get("collection", {}).get("complete", True),
         "resolved": resolved,
         "remediation_pct": round(100 * resolved / non_path) if non_path else 0,
+        # Exposure: share of entry-point principals reaching a Tier-0 target (for history/trend/compare).
+        "exposure_pct": (result.get("analytics", {}).get("exposure", {}) or {}).get("exposure_pct"),
     }
 
 

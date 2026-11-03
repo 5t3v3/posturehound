@@ -15,22 +15,19 @@ from dataclasses import dataclass, field
 
 import networkx as nx
 
+from .. import paths
 from .schema import GraphEdge, GraphNode, GraphSnapshot
 
 # Never ship an unbounded subgraph to the browser; the UI renders subgraphs, not the whole
 # ~60k-edge graph. A query that would exceed this is truncated and flagged.
 DEFAULT_NODE_CAP = 600
 
-# Edge types the attack graph traverses for path-finding, kept identical to scoring's
-# _ESCALATION_EDGES so the explorer's paths match the findings exactly. Crucially this
-# includes MemberOf/Owns (positioning), without which membership-into-a-Tier-0-group paths
-# were missing and everything looked like a 1-2 hop graph.
-_ABUSE_TYPES = {
-    "CanAddSecret", "CanAddMember", "CanAddOwner", "CanGrantRole", "CanGrantAppRole",
-    "CanEscalateRBAC", "CanStealManagedIdentity", "CanResetPassword", "CanReachKVSecret",
-    "CanGetStorageKey", "CanExecAKS", "CanReadStorageBlob", "CanPushContainer",
-    "EligibleForRole",
-}
+# Edge types the attack graph traverses for path-finding. Derived from paths.ABUSE_EDGES (the
+# single source of truth) as their string values, so the explorer's reachability is provably
+# identical to the findings' and the two can never drift apart. MemberOf/Owns are added as
+# positioning edges (cheap), without which membership-into-a-Tier-0-group paths disappear and
+# everything looks like a 1-2 hop graph.
+_ABUSE_TYPES = {e.value for e in paths.ABUSE_EDGES}
 _POSITIONING_TYPES = {"MemberOf": 0.5, "Owns": 0.5}   # traversed to get into position; cheap
 _TRAVERSABLE_TYPES = _ABUSE_TYPES | set(_POSITIONING_TYPES)
 
@@ -910,7 +907,8 @@ class AttackGraph:
         t = self._node.get(e.target)
         return {
             "id": e.key, "type": e.type, "primitive": e.primitive, "derived": e.derived,
-            "weight": e.weight, "why": e.why, "conditions": e.conditions,
+            "weight": e.weight, "weight_reason": getattr(e, "weight_reason", ""),
+            "why": e.why, "conditions": e.conditions,
             "evidence": e.evidence, "count": e.count,
             "source": {"id": e.source, "label": s.label if s else e.source,
                        "kind": s.kind if s else "AZUnknown"},

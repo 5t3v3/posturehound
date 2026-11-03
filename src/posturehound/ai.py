@@ -25,6 +25,7 @@ import json
 import os
 
 from . import ai_findings, store
+from . import pseudonymize as _pseudonymize
 from .coverage import enrich_frameworks
 from .facts import audit_fact_pack, build_fact_pack
 from .model import EdgeType, Graph, NodeKind
@@ -131,7 +132,7 @@ def _generate_executive_summary(findings: list[dict], score: dict,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = (msg.content[0].text if msg.content else "").strip()
+        text = _pseudonymize.restore_text((msg.content[0].text if msg.content else "").strip())
         if not text:
             return None, "the model returned an empty response"
         return text, None
@@ -231,7 +232,7 @@ def _generate_sp_group_insights(findings: list[dict], api_key: str, model: str,
             msg = ai_findings.create_message(
                 client, model=model, max_tokens=900, temperature=0,
                 messages=[{"role": "user", "content": prompt}])
-            text = (msg.content[0].text if msg.content else "").strip()
+            text = _pseudonymize.restore_text((msg.content[0].text if msg.content else "").strip())
             return sid, _parse_sp_insight(text)
         except Exception:  # noqa: BLE001, best-effort per SP; a failure just omits its insight
             return sid, None
@@ -493,6 +494,24 @@ def apply_ai_generation(result: dict, g: Graph, client: LLMClient, *,
     for _f in det_unified:
         enrich_frameworks(_f)
     result["deterministic_finding_count"] = len(det_unified)
+
+    # E4: install the scan-scoped pseudonymiser so every outbound prompt in this pipeline is
+    # redacted (tenant names / UPNs / ids -> stable tokens) and model output is restored before
+    # grounding. No-op when PH_AI_PSEUDONYMISE is off. Wrap the whole pipeline so the executive
+    # summary and SP-insight calls are covered too.
+    _pseudo_tok = _pseudonymize.activate(g)
+    if _pseudo_tok is not None and _pseudonymize.active():
+        result["ai_pseudonymised"] = True
+    try:
+        return _apply_ai_generation_inner(result, g, client, det_unified,
+                                          on_progress=on_progress,
+                                          reuse_analysis=reuse_analysis, trace=trace)
+    finally:
+        _pseudonymize.deactivate(_pseudo_tok)
+
+
+def _apply_ai_generation_inner(result: dict, g: Graph, client: LLMClient, det_unified: list, *,
+                               on_progress=None, reuse_analysis: bool = True, trace=None) -> dict:
 
     if not client.available:
         result["ai_enabled"] = False

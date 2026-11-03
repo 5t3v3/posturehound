@@ -696,9 +696,66 @@ def app_owned_by_nonpriv(g: Graph):
         reason="owner can add a credential and sign in as the service principal")
 
 
+def _is_saml_signing(cred: dict) -> bool:
+    """A keyCredential with usage 'Sign' is a SAML token-signing certificate: Entra holds its
+    private key and uses it to sign assertions TO the SaaS app, so it cannot be used to
+    authenticate AS the application. Counting those inflated every SSO app into the credential
+    rules. A certificate with no usage recorded is treated as auth-capable."""
+    return str(cred.get("usage") or "").lower() == "sign"
+
+
+def _auth_credentials(n) -> list[dict]:
+    """Credentials that can authenticate AS the identity: client secrets, plus certificates whose
+    usage is not 'Sign'. Excludes SAML token-signing certificates (see _is_saml_signing)."""
+    out = list(n.props.get("passwordCredentials") or [])
+    out += [k for k in (n.props.get("keyCredentials") or []) if not _is_saml_signing(k)]
+    return out
+
+
+def _is_microsoft_first_party(n) -> bool:
+    """True for a Microsoft-owned first-party SP (Azure Resource Manager, Azure Stack - AKS, ...).
+    These belong to a Microsoft tenant, so they are tagged foreign_tenant, but they are not a
+    third-party vendor."""
+    owner = str(n.props.get("_owner_org") or "").strip().lower().strip("{}")
+    return owner in C.MICROSOFT_FIRST_PARTY_TENANTS
+
+
+def _platform_identity_resource_ids(g: Graph, sp) -> list[str]:
+    """ARM resource ids that identify what a managed identity belongs to: its own id
+    (user-assigned MIs list it in alternativeNames) and the resources it is attached to
+    (HAS_MANAGED_IDENTITY: resource -> identity)."""
+    ids = [str(x) for x in (sp.props.get("alternativeNames") or []) if x]
+    ids += [e.src for e in g.in_edges(sp.id, EdgeType.HAS_MANAGED_IDENTITY)]
+    return ids
+
+
+def _is_platform_managed_identity(g: Graph, sp) -> bool:
+    """True for a managed identity that Azure itself provisions and assigns broad roles to by
+    design (Defender for Cloud, Azure Policy guest configuration, AKS cluster/node identities,
+    Backup, Network Watcher). Matched on the ARM resource id of the identity or its attached
+    resource, never the display name. Such an identity is a 'verify, do not remove' item
+    (AZ-MI-003), not an over-grant, so the broad-role rules skip it."""
+    if "managed_identity" not in sp.tags:
+        return False
+    ids = _platform_identity_resource_ids(g, sp)
+    # An AKS cluster's own identity: attached directly to an AKS node.
+    for e in g.in_edges(sp.id, EdgeType.HAS_MANAGED_IDENTITY):
+        src = g.node(e.src)
+        if src is not None and src.kind == NodeKind.AKS:
+            return True
+    return any(any(m in rid.lower() for m in C.AZURE_PLATFORM_IDENTITY_MARKERS) for rid in ids)
+
+
+def _scope_is_narrow(scope: str) -> bool:
+    """A KNOWN resource- or resource-group-level scope. Subscription/management-group scope and
+    an unknown/empty scope both return False, so an uncollected scope is never silently
+    downgraded out of the high-severity finding."""
+    return bool(scope) and not C.is_at_broad_scope(scope)
+
+
 @rule(id="AZ-APP-004", title="Service principal credential is long-lived or non-expiring",
-      severity=Severity.HIGH, category=Category.APPLICATION,
-      description="A service principal/application has a password or certificate credential with no expiry or a very long lifetime. Stolen long-lived secrets enable durable, unauthenticated persistence.",
+      severity=Severity.MEDIUM, category=Category.APPLICATION,
+      description="A service principal/application has a password or certificate credential with no expiry or a very long lifetime. Stolen long-lived secrets enable durable, unauthenticated persistence. This is rated Medium as a rotation-hygiene item for the general app population; when the holder is privileged, AZ-APP-005 raises the same credential to High.",
       remediation="Set short credential lifetimes, rotate regularly, prefer certificate or workload-identity federation over client secrets, and remove unused credentials.",
       data_source=[NodeKind.APP, NodeKind.SERVICE_PRINCIPAL],
       frameworks={"CIS Azure": "1.x", "MITRE ATT&CK": "T1078.004"})
@@ -720,8 +777,13 @@ def long_lived_credentials(g: Graph):
 
     out = []
     for n in g.nodes_of_kind(NodeKind.APP, NodeKind.SERVICE_PRINCIPAL):
-        creds = (n.props.get("passwordCredentials") or []) + (n.props.get("keyCredentials") or [])
-        for cred in creds:
+        # Managed identities (Azure issues and rotates their certificates) and foreign-tenant SPs
+        # (the vendor owns the credential, you cannot authenticate as the SP in this tenant) are
+        # not standing credential risk here. SAML token-signing certificates cannot authenticate
+        # as the app, so they are excluded by _auth_credentials.
+        if n.kind == NodeKind.SERVICE_PRINCIPAL and (n.tags & {"managed_identity", "foreign_tenant"}):
+            continue
+        for cred in _auth_credentials(n):
             end = cred.get("endDateTime") or cred.get("endDate")
             start = cred.get("startDateTime") or cred.get("startDate")
             note = None
@@ -745,9 +807,27 @@ def long_lived_credentials(g: Graph):
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1078.004"})
 def privileged_sp_with_creds(g: Graph):
-    return [_ent(g, sp.id, note="privileged SP with stored credentials")
-            for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL)
-            if "has_credentials" in sp.tags and (sp.tags & {"tier0", "privileged", "dangerous_app_role"})]
+    # Managed identities list Azure-managed certificates in keyCredentials, which set the
+    # has_credentials tag although nobody holds a usable secret; a foreign-tenant SP's credential
+    # is owned by the vendor, not this tenant. Both are excluded, and only auth-capable
+    # credentials count (not SAML token-signing certificates). The backing app registration's own
+    # credentials are included, since they authenticate as the same identity.
+    apps = {str(a.props.get("appId")).lower(): a for a in g.nodes_of_kind(NodeKind.APP)
+            if a.props.get("appId")}
+    out = []
+    for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
+        if not (sp.tags & {"tier0", "privileged", "dangerous_app_role"}):
+            continue
+        if sp.tags & {"managed_identity", "foreign_tenant"}:
+            continue
+        creds = _auth_credentials(sp)
+        app = apps.get(str(sp.props.get("appId") or "").lower())
+        if app is not None:
+            creds = creds + _auth_credentials(app)
+        if creds:
+            out.append(_ent(g, sp.id, credential_count=len(creds),
+                            note="privileged SP with stored credentials"))
+    return out
 
 
 @rule(id="AZ-APP-006", title="Multi-tenant application registration",
@@ -845,6 +925,10 @@ def rbac_sprawl(g: Graph):
     _ROLE_RANK = {"owner": 0, "contributor": 1}
     holders: dict[str, tuple[str, str]] = {}
     for p, role, scope in _rbac(g):
+        # Azure platform-managed identities hold subscription Contributor by design; they are
+        # surfaced as a verify-item by AZ-MI-003, not counted as sprawl here.
+        if _is_platform_managed_identity(g, p):
+            continue
         if role.lower() in _ROLE_RANK and C.is_at_broad_scope(scope):
             existing = holders.get(p.id)
             if existing is None or _ROLE_RANK[role.lower()] < _ROLE_RANK[existing[0].lower()]:
@@ -878,6 +962,9 @@ def sp_broad_rbac(g: Graph):
         (p.id, f"{role} @ {scope}", scope) for p, role, scope in _rbac(g)
         if p.kind == NodeKind.SERVICE_PRINCIPAL
         and role.lower() in C.RBAC_PRIVILEGED_ROLES and C.is_at_broad_scope(scope)
+        # Platform-managed identities (Defender, Policy, AKS, ...) hold broad roles by design;
+        # they are surfaced as a verify-item by AZ-MI-003, not as an over-grant here.
+        and not _is_platform_managed_identity(g, p)
     ], list_key="assignments")
 
 
@@ -907,18 +994,14 @@ def role_group_dynamic(g: Graph):
 # =========================================================================== #
 # Domain E, Key Vault
 # =========================================================================== #
-@rule(id="AZ-KV-001", title="Principal can read secrets from multiple Key Vaults",
-      severity=Severity.HIGH, category=Category.KEYVAULT,
-      description="A single principal has secret get/list access across several Key Vaults, concentrating credential-theft impact if that principal is compromised.",
-      remediation="Apply least-privilege Key Vault access per workload; prefer RBAC data-plane roles scoped to specific vaults and use separate identities.",
-      data_source=[NodeKind.KEY_VAULT],
-      frameworks={"MITRE ATT&CK": "T1552.001"})
-def kv_broad_reader(g: Graph):
+def _kv_reader_breadth(g: Graph):
+    """Shared: principals with secret get/list across >=2 Key Vaults, with the subscription
+    span. Split by AZ-KV-001 (within one subscription) and AZ-KV-013 (across subscriptions)."""
     reach = {}
     for e in g.edges():
         if e.type == EdgeType.CAN_REACH_KV_SECRET:
             reach.setdefault(e.src, set()).add(e.dst)
-    out = []
+    rows = []
     for pid, vault_ids in reach.items():
         if len(vault_ids) < 2:
             continue
@@ -928,9 +1011,32 @@ def kv_broad_reader(g: Graph):
             sub = _subscription_for(g, vid)
             subs.add(sub)
             vaults.append({"vault": g.display(vid), "subscription": sub})
-        out.append(_ent(g, pid, vault_count=len(vault_ids), vaults=vaults,
-                        subscriptions=sorted(subs)))
-    return out
+        rows.append((pid, vault_ids, subs, vaults))
+    return rows
+
+
+@rule(id="AZ-KV-001", title="Principal can read secrets from multiple Key Vaults (same subscription)",
+      severity=Severity.MEDIUM, category=Category.KEYVAULT,
+      description="A single principal has secret get/list access across several Key Vaults within one subscription. This is often the intended pattern for a workload identity, but it concentrates credential-theft impact if the principal is compromised, so the scope is worth confirming.",
+      remediation="Confirm the workload needs every vault; prefer RBAC data-plane roles (Key Vault Secrets User) scoped to the specific vaults it uses, and separate identities per workload where practical.",
+      data_source=[NodeKind.KEY_VAULT],
+      frameworks={"MITRE ATT&CK": "T1552.001"})
+def kv_broad_reader(g: Graph):
+    # Within a single subscription -> Medium (routine for a workload identity).
+    return [_ent(g, pid, vault_count=len(vids), vaults=vaults, subscriptions=sorted(subs))
+            for pid, vids, subs, vaults in _kv_reader_breadth(g) if len(subs) < 2]
+
+
+@rule(id="AZ-KV-013", title="Principal can read secrets from Key Vaults across multiple subscriptions",
+      severity=Severity.HIGH, category=Category.KEYVAULT,
+      description="A single principal has secret get/list access to Key Vaults in two or more subscriptions. Cross-subscription vault access is rarely a legitimate single-workload need: it concentrates credential-theft impact across security boundaries, so one compromised identity reaches secrets in multiple subscriptions at once.",
+      remediation="Split the access per subscription/workload; prefer RBAC data-plane roles scoped to the specific vaults, and use separate identities rather than one principal spanning subscriptions.",
+      data_source=[NodeKind.KEY_VAULT],
+      frameworks={"MITRE ATT&CK": "T1552.001"})
+def kv_cross_subscription_reader(g: Graph):
+    # Spanning >=2 subscriptions -> High (crosses a security boundary).
+    return [_ent(g, pid, vault_count=len(vids), vaults=vaults, subscriptions=sorted(subs))
+            for pid, vids, subs, vaults in _kv_reader_breadth(g) if len(subs) >= 2]
 
 
 @rule(id="AZ-KV-002", title="Key Vault uses legacy access policies instead of RBAC",
@@ -1248,14 +1354,77 @@ def app_admin_any_app(g: Graph):
       remediation="Separate management-plane and data-plane roles; avoid Key Vault Contributor for principals that should not read secrets, and enable purge protection + RBAC.",
       data_source=[NodeKind.KEY_VAULT],
       frameworks={"MITRE ATT&CK": "T1552.001"})
-def kv_management_access(g: Graph):
-    # One entity per principal. Per-assignment rows produced 8,414 entities for 116
-    # principals (72x) and never told the reader how many vaults were involved.
-    return _ents_by_principal(g, [
+def _kv_mgmt_rows(g: Graph, *, narrow: bool):
+    """KV Contributor/Administrator holders, bucketed by scope. `narrow` selects resource/RG
+    scope (a specific vault); otherwise subscription/MG or unknown. Platform-managed identities
+    are handled by AZ-MI-003."""
+    return [
         (p.id, f"{role} @ {_subscription_for(g, scope) if scope else 'unknown'}", scope)
         for p, role, scope in _rbac(g)
         if role.lower() in ("key vault contributor", "key vault administrator")
-    ], list_key="assignments")
+        and _scope_is_narrow(scope) == narrow
+        and not _is_platform_managed_identity(g, p)
+    ]
+
+
+def kv_management_access(g: Graph):
+    # One entity per principal. Subscription/MG-scoped (or unknown) -> every vault under scope.
+    return _ents_by_principal(g, _kv_mgmt_rows(g, narrow=False), list_key="assignments")
+
+
+@rule(id="AZ-KV-014", title="Key Vault management-plane access via a resource-scoped role",
+      severity=Severity.MEDIUM, category=Category.KEYVAULT,
+      description="A principal holds Key Vault Contributor / Administrator over a specific vault (or its resource group). Management-plane control lets the holder change the vault's access policies or RBAC to grant itself data-plane access and read its secrets, but the reach is limited to the vault(s) in scope rather than every vault in the subscription (which AZ-KV-003 flags at High).",
+      remediation="Separate management-plane and data-plane roles; avoid Key Vault Contributor for principals that should not read secrets, and enable purge protection + RBAC.",
+      data_source=[NodeKind.KEY_VAULT],
+      frameworks={"MITRE ATT&CK": "T1552.001"})
+def kv_management_access_scoped(g: Graph):
+    # Resource/RG-scoped -> a specific vault only -> Medium.
+    return _ents_by_principal(g, _kv_mgmt_rows(g, narrow=True), list_key="assignments")
+
+
+@rule(id="AZ-MI-003",
+      title="Azure platform-managed identity holds a broad role (assigned by Azure, verify not remove)",
+      severity=Severity.LOW, category=Category.BEST_PRACTICE, best_practice=True,
+      description=(
+          "An Azure platform-managed identity (Defender for Cloud, Azure Policy guest "
+          "configuration, an AKS cluster/node identity, Backup, or Network Watcher) holds a broad "
+          "or data-exposing Azure role, Owner/Contributor at subscription scope, a listKeys-capable "
+          "role, Key Vault management, or AKS cluster-admin. Azure assigns these roles to the "
+          "identity by design as part of enabling the service, so they are surfaced here as a "
+          "verification item rather than as an over-grant in the Owner/Contributor, storage-key, "
+          "Key Vault, and AKS rules (which would otherwise rate every such identity High). They are "
+          "not a free pass: confirm each identity is genuinely the platform's and that the service "
+          "is intended to be enabled, and treat a role on an identity you do not recognise as a real "
+          "finding."
+      ),
+      remediation=(
+          "Confirm the identity belongs to the named Azure service and that the service is intended "
+          "to be enabled at this scope. Do not remove the role assignment while the service is in "
+          "use. If the service is not needed, disable it so Azure removes the identity and its "
+          "assignment. Record accepted platform identities so a genuinely unexpected one stands out."
+      ),
+      data_source=[NodeKind.SERVICE_PRINCIPAL],
+      frameworks={"Best Practice": "Platform identity hygiene", "MITRE ATT&CK": "T1098.003"})
+def platform_mi_broad_role(g: Graph):
+    _EXPOSING = (C.RBAC_PRIVILEGED_ROLES | C.STORAGE_KEY_ROLES | C.KV_MANAGEMENT_ROLES
+                 | {"key vault contributor", "key vault administrator"})
+    roles: dict[str, set[str]] = {}
+    for p, role, scope in _rbac(g):
+        if not _is_platform_managed_identity(g, p):
+            continue
+        if role.lower() in _EXPOSING and (C.is_at_broad_scope(scope) or role.lower() in
+                                          (C.STORAGE_KEY_ROLES | {"key vault contributor",
+                                                                  "key vault administrator"})):
+            roles.setdefault(p.id, set()).add(role)
+    for e in g.edges():
+        if e.type == EdgeType.CAN_EXEC_AKS:
+            src = g.node(e.src)
+            if src is not None and _is_platform_managed_identity(g, src):
+                roles.setdefault(e.src, set()).add(e.evidence.get("role") or "AKS cluster-admin")
+    return [_ent(g, pid, roles=sorted(rs),
+                 note="Azure platform-managed identity; verify the service is intended")
+            for pid, rs in roles.items()]
 
 
 @rule(id="AZ-KV-012", title="Key Vault is readable by an unusually large number of principals",
@@ -1353,21 +1522,62 @@ def control_weakening_sp(g: Graph):
 # =========================================================================== #
 # Domain M, Storage & Key Vault data-plane
 # =========================================================================== #
+def _shared_key_disabled(acct) -> bool:
+    """True only when the account EXPLICITLY disables shared-key access (listKeys yields keys
+    that cannot authenticate). Unknown/absent -> False, so an uncollected property never
+    silences the finding."""
+    if acct is None:
+        return False
+    p = acct.props or {}
+    v = p.get("allowSharedKeyAccess")
+    if v is None and isinstance(p.get("properties"), dict):
+        v = p["properties"].get("allowSharedKeyAccess")
+    return v is False
+
+
+def _storage_key_rows(g: Graph, *, narrow: bool):
+    """listKeys-capable principals, bucketed by the scope at which the role is held. `narrow`
+    selects resource/RG-scoped grants (one account's data); otherwise subscription/MG-scoped or
+    unknown (every account under the scope). Platform-managed identities are handled by AZ-MI-003
+    and accounts with shared-key access disabled are skipped (the keys cannot authenticate)."""
+    seen = {}
+    for e in g.edges():
+        if e.type != EdgeType.CAN_GET_STORAGE_KEY or e.src in seen:
+            continue
+        src = g.node(e.src)
+        if src is not None and _is_platform_managed_identity(g, src):
+            continue
+        acct = g.node(e.dst)
+        if _shared_key_disabled(acct):
+            continue
+        if _scope_is_narrow(e.evidence.get("scope") or "") != narrow:
+            continue
+        seen[e.src] = _ent(g, e.src, account=acct.name if acct else e.dst,
+                           subscription=_subscription_for(g, e.dst),
+                           role=e.evidence.get("role"), scope=e.evidence.get("scope") or None)
+    return list(seen.values())
+
+
 @rule(id="AZ-STOR-002", title="Storage account keys retrievable via RBAC (listKeys)",
       severity=Severity.HIGH, category=Category.STORAGE,
-      description="A principal can list a storage account's access keys (Storage Account Contributor / Key Operator / Contributor / Owner). Account keys grant full, shared, audit-poor access to all data in the account and bypass per-identity RBAC.",
+      description="A principal can list a storage account's access keys (Storage Account Contributor / Key Operator / Contributor / Owner) via a subscription- or management-group-scoped role, reaching every account under that scope. Account keys grant full, shared, audit-poor access to all data in the account and bypass per-identity RBAC.",
       remediation="Disable shared-key access where possible, prefer Entra (RBAC) data-plane roles, and restrict who holds listKeys-capable roles.",
       data_source=[NodeKind.STORAGE],
       frameworks={"MITRE ATT&CK": "T1552.001", "CIS Azure": "3.x"})
 def storage_key_access(g: Graph):
-    seen = {}
-    for e in g.edges():
-        if e.type == EdgeType.CAN_GET_STORAGE_KEY and e.src not in seen:
-            acct = g.node(e.dst)
-            seen[e.src] = _ent(g, e.src, account=acct.name if acct else e.dst,
-                                subscription=_subscription_for(g, e.dst),
-                                role=e.evidence.get("role"))
-    return list(seen.values())
+    # Subscription/MG-scoped (or unknown-scope) listKeys reaches every account under the scope.
+    return _storage_key_rows(g, narrow=False)
+
+
+@rule(id="AZ-STOR-010", title="Storage account keys retrievable via a resource-scoped role (listKeys)",
+      severity=Severity.MEDIUM, category=Category.STORAGE,
+      description="A principal can list a storage account's access keys (Storage Account Contributor / Key Operator / Contributor / Owner) via a role scoped to that account or its resource group. Account keys grant full, shared, audit-poor access to that account's data and bypass per-identity RBAC, but the reach is limited to the specific account(s) in scope rather than every account in the subscription (which AZ-STOR-002 flags at High).",
+      remediation="Prefer Entra (RBAC) data-plane roles over listKeys-capable roles, disable shared-key access where possible, and confirm the workload needs key access to this account.",
+      data_source=[NodeKind.STORAGE],
+      frameworks={"MITRE ATT&CK": "T1552.001", "CIS Azure": "3.x"})
+def storage_key_access_scoped(g: Graph):
+    # Resource/RG-scoped listKeys reaches only the account(s) in scope -> Medium.
+    return _storage_key_rows(g, narrow=True)
 
 
 @rule(id="AZ-KV-004", title="Key Vault grants cryptographic key operations (sign/decrypt)",
@@ -1434,15 +1644,19 @@ def aks_cluster_cred(g: Graph):
     seen = {}
     for e in g.edges():
         if e.type == EdgeType.CAN_EXEC_AKS and e.src not in seen:
+            src = g.node(e.src)
+            # The cluster's own platform identity holds cluster-admin by design -> AZ-MI-003.
+            if src is not None and _is_platform_managed_identity(g, src):
+                continue
             cl = g.node(e.dst)
             seen[e.src] = _ent(g, e.src, cluster=cl.name if cl else e.dst, role=e.evidence.get("role"))
     return list(seen.values())
 
 
 @rule(id="AZ-STOR-003", title="Principal has direct Storage Blob Data access (Entra data-plane role)",
-      severity=Severity.HIGH, category=Category.STORAGE,
-      description="A principal holds Storage Blob Data Owner, Contributor, or Reader on a storage account. Unlike the listKeys path, this grants named-identity Entra token access to all blob data, a quieter exfiltration path that bypasses shared-key monitoring and requires no key rotation to exploit.",
-      remediation="Review whether this level of blob access is required. Prefer tightly scoped container-level RBAC over account-level data roles. Enable storage diagnostic logs for blob operations.",
+      severity=Severity.LOW, category=Category.STORAGE,
+      description="A principal holds a Storage Blob Data role (Owner, Contributor, or Reader) on a storage account, granting named-identity Entra access to blob data. This is the RECOMMENDED access pattern (Entra RBAC in preference to shared keys), so it is surfaced at Low as a scope-review item, not a misconfiguration: confirm the role is scoped to what the workload needs rather than account-wide. It becomes materially risky only when the account is also internet-exposed or the role is broader than Reader, which the account-level storage rules flag separately.",
+      remediation="Confirm the workload needs this blob access; prefer container-scoped data roles over account-level, and least-privilege (Reader over Contributor/Owner). Enable storage diagnostic logging for blob operations (ARG-LOG-002).",
       data_source=[NodeKind.STORAGE],
       frameworks={"MITRE ATT&CK": "T1530", "CIS Azure": "3.x"})
 def storage_blob_direct_access(g: Graph):
@@ -1614,6 +1828,26 @@ def storage_shared_key_access(g: Graph):
             out.append(_ent(g, s.id, subscription=_subscription_for(g, s.id),
                             allowSharedKeyAccess=True, confirmed=True,
                             note="shared-key access explicitly enabled"))
+    return out
+
+
+@rule(id="AZ-STOR-011", title="Storage account allows public network access",
+      severity=Severity.MEDIUM, category=Category.STORAGE,
+      description="A storage account has publicNetworkAccess set to Enabled, so its data-plane endpoints are reachable from the public internet (subject to any firewall rules) rather than confined to private connectivity. Public reachability is the precondition that turns a leaked SAS token or shared key into remote data access.",
+      remediation="Set publicNetworkAccess=Disabled and reach the account over a Private Endpoint; where public access is genuinely required, pair it with a default-Deny firewall and specific allowed networks.",
+      data_source=[NodeKind.STORAGE],
+      requires_props=['publicNetworkAccess'],
+      frameworks={"CIS Azure": "4.6", "MITRE ATT&CK": "T1530"})
+def storage_public_network_access(g: Graph):
+    # Only a COLLECTED publicNetworkAccess == 'Enabled' is a finding; absence leaves the rule
+    # not-assessed (requires_props gate), never a per-account false positive.
+    out = []
+    for s in g.nodes_of_kind(NodeKind.STORAGE):
+        v = (s.props.get("properties") or s.props).get("publicNetworkAccess")
+        if isinstance(v, str) and v.strip().lower() == "enabled":
+            out.append(_ent(g, s.id, subscription=_subscription_for(g, s.id),
+                            publicNetworkAccess=v, confirmed=True,
+                            note="public network access enabled"))
     return out
 
 
@@ -1849,14 +2083,17 @@ def credential_sprawl(g: Graph):
 
 
 @rule(id="AZ-APP-016",
-      title="High-privilege application accessible by all users (no assignment restriction)",
-      severity=Severity.HIGH, category=Category.APPLICATION,
+      title="Application accessible by all users holds sensitive delegated permissions (no assignment restriction)",
+      severity=Severity.MEDIUM, category=Category.APPLICATION,
       description=(
-          "The application's service principal has appRoleAssignmentRequired = false (the default), "
-          "meaning any user in the tenant can sign in to it and use its delegated permissions. "
-          "This includes ex-employees whose accounts have not been disabled, they retain access "
-          "to the app and anything it can reach on their behalf. For apps with powerful delegated "
-          "Graph permissions (Mail, Files, Directory) this is an exfiltration and persistence risk."
+          "The application's service principal has appRoleAssignmentRequired = false (the default) "
+          "AND holds sensitive Microsoft Graph DELEGATED permissions consented tenant-wide "
+          "(AllPrincipals), so any user in the tenant, including ex-employees whose accounts have "
+          "not been disabled, can sign in and have the app act on their behalf against Mail, Files, "
+          "Directory, and similar. appRoleAssignmentRequired gates only interactive user sign-in: it "
+          "has no effect on APPLICATION permissions (app-only tokens) or on the app's own "
+          "credentials, so neither qualifies here. Rated Medium because a signed-in user only reaches "
+          "data they could already reach directly; the risk is the app acting for them without review."
       ),
       remediation=(
           "Set appRoleAssignmentRequired = true on each affected service principal (Enterprise Apps → "
@@ -1867,12 +2104,18 @@ def credential_sprawl(g: Graph):
       data_source=[NodeKind.SERVICE_PRINCIPAL],
       frameworks={"MITRE ATT&CK": "T1078.004", "CIS Azure": "1.x", "Best Practice": "App access restriction"})
 def sp_no_assignment_required(g: Graph):
-    """Flag Application-type SPs where any user can sign in (appRoleAssignmentRequired != true)
-    AND the SP has meaningful permissions or credentials that make unrestricted access risky."""
-    # Dangerous Graph delegated/application scope keywords, a subset that matters for this rule.
+    """Flag SPs where any user can sign in (appRoleAssignmentRequired != true) AND the app holds
+    sensitive Microsoft Graph DELEGATED permissions consented tenant-wide (AllPrincipals).
+
+    appRoleAssignmentRequired only gates interactive user sign-in. It has no effect on
+    APPLICATION permissions (app-only tokens) or on the app's own credentials, so those no longer
+    qualify: a daemon app holding Mail.Send as an application permission was reported here although
+    setting assignment-required would change nothing (its application permissions are covered by
+    the Graph-permission rules). A single-user (Principal) consent is scoped to that one user, so
+    only tenant-wide AllPrincipals grants count."""
     _SENSITIVE_SCOPES = {
         "mail.read", "mail.readwrite", "mail.send",
-        "files.read", "files.readwrite", "files.readwrite.all",
+        "files.read.all", "files.readwrite", "files.readwrite.all",
         "directory.read.all", "directory.readwrite.all",
         "user.read.all", "user.readwrite.all",
         "group.read.all", "group.readwrite.all",
@@ -1882,42 +2125,24 @@ def sp_no_assignment_required(g: Graph):
     }
     out = []
     for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
-        # Only custom/enterprise apps, skip managed identities and foreign-tenant SPs
-        if sp.props.get("servicePrincipalType") == "ManagedIdentity":
+        if sp.props.get("servicePrincipalType") == "ManagedIdentity" or "managed_identity" in sp.tags:
             continue
         if "foreign_tenant" in sp.tags:
             continue
-        # Skip if assignment is already required
         if sp.props.get("appRoleAssignmentRequired") is True:
             continue
-        # Skip if no live credentials AND no dangerous permissions, low risk
-        cred_count = (len(sp.props.get("passwordCredentials") or []) +
-                      len(sp.props.get("keyCredentials") or []))
-        has_creds = cred_count > 0
-        # appRoles here are permissions GRANTED TO the SP via AZAppRoleAssignment records
-        # (not the roles it exposes, those live on the resource SP, not the principal SP)
-        app_roles = {
-            (r.get("value") or "").lower()
-            for r in (sp.props.get("_granted_app_roles") or [])
-        }
-        has_sensitive = bool(
-            app_roles & _SENSITIVE_SCOPES
-            or "dangerous_app_role" in sp.tags
-            or "tier0" in sp.tags
-            or "privileged" in sp.tags
-        )
-        if not (has_creds or has_sensitive):
+        delegated = set()
+        for gr in sp.props.get("_delegated_grants") or []:
+            if str(gr.get("consent_type") or "").lower() != "allprincipals":
+                continue
+            delegated |= {x.lower() for x in str(gr.get("scope") or "").split()}
+        sensitive = sorted(delegated & _SENSITIVE_SCOPES)
+        if not sensitive:
             continue
-        dangerous_scopes = sorted(app_roles & _SENSITIVE_SCOPES)
-        out.append(_ent(g, sp.id,
-                        assignment_required=False,
-                        credential_count=cred_count,
-                        sensitive_scopes=dangerous_scopes[:5] or None))
-    # Cap at 30 to avoid an unactionable bulk list, most-dangerous first (privileged/tier0 first)
-    out.sort(key=lambda e: (
-        0 if g.node(e.id) and ("tier0" in (g.node(e.id).tags or set()) or "privileged" in (g.node(e.id).tags or set())) else 1,
-        0 if g.node(e.id) and "dangerous_app_role" in (g.node(e.id).tags or set()) else 1,
-    ))
+        out.append(_ent(g, sp.id, assignment_required=False,
+                        sensitive_delegated_scopes=sensitive[:5]))
+    # Cap at 30 to stay actionable, most sensitive scopes first.
+    out.sort(key=lambda e: -len(e.evidence.get("sensitive_delegated_scopes") or []))
     return out[:30]
 
 
@@ -2076,6 +2301,10 @@ def external_app_high_impact_perms(g: Graph):
     out = []
     for sp in g.nodes_of_kind(NodeKind.SERVICE_PRINCIPAL):
         if "foreign_tenant" not in sp.tags:
+            continue
+        # Microsoft's own apps are "foreign" (their home tenant is not yours) but are not a
+        # third-party vendor; e.g. "Azure Stack - AKS" was reported as an external SaaS app.
+        if _is_microsoft_first_party(sp):
             continue
         granted = {(r.get("value") or "") for r in (sp.props.get("_granted_app_roles") or [])}
         dangerous = sorted(granted & set(C.DANGEROUS_GRAPH_APP_ROLES))
@@ -3205,7 +3434,7 @@ _FRAMEWORK_ENRICH: dict[str, dict] = {
     "AZ-MI-001": {_ATRM: "AZT601.1"}, "AZ-MI-002": {_ATRM: "AZT601.1"},
     "AZ-PATH-002": {_ATRM: "AZT601.1"}, "AZ-PATH-003": {_ATRM: "AZT501.1"},
     # ---- Key Vault ----
-    "AZ-KV-001": {_ATRM: "AZT604.1"}, "AZ-KV-003": {_ATRM: "AZT604.1"},
+    "AZ-KV-001": {_ATRM: "AZT604.1"}, "AZ-KV-013": {_ATRM: "AZT604.1"}, "AZ-KV-003": {_ATRM: "AZT604.1"},
     "AZ-KV-004": {_ATRM: "AZT604.3"}, "AZ-KV-007": {_ATRM: "AZT604.1"},
     "AZ-KV-010": {_ATRM: "AZT604.1"}, "AZ-KV-011": {_ATRM: "AZT604.1"},
     "AZ-KV-012": {_ATRM: "AZT604.1"},
